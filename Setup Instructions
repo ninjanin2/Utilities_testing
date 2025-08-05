@@ -1,0 +1,176 @@
+# FullSubNet+ Audio Denoising Setup Guide
+
+## Requirements
+
+Create a `requirements.txt` file:
+
+```
+torch>=1.9.0
+torchaudio>=0.9.0
+librosa>=0.8.0
+soundfile>=0.10.0
+numpy>=1.20.0
+scipy>=1.6.0
+```
+
+## Installation
+
+1. **Install Dependencies**:
+```bash
+pip install -r requirements.txt
+```
+
+2. **Download FullSubNet+ Model**:
+```bash
+# Create model directory
+mkdir -p models/fullsubnet_plus
+
+# Download pre-trained FullSubNet+ model (example URLs)
+# You'll need to get the actual model from the official source
+wget -O models/fullsubnet_plus/fullsubnet_plus.pth [MODEL_URL]
+```
+
+## Model Directory Structure
+
+Your model directory should look like:
+```
+models/
+└── fullsubnet_plus/
+    ├── fullsubnet_plus.pth  # Main model file
+    ├── config.json          # Model configuration (optional)
+    └── README.md            # Model documentation (optional)
+```
+
+## Usage Examples
+
+### Basic Usage
+```bash
+python fullsubnet_denoiser.py --input noisy_audio.wav --output clean_audio.wav
+```
+
+### Advanced Usage
+```bash
+python fullsubnet_denoiser.py \
+    --input noisy_call.wav \
+    --output enhanced_call.wav \
+    --model-path ./models/fullsubnet_plus \
+    --sample-rate 16000 \
+    --device cuda
+```
+
+### Python API Usage
+```python
+from fullsubnet_denoiser import AudioPreprocessor
+
+# Initialize preprocessor
+preprocessor = AudioPreprocessor(target_sr=16000)
+
+# Process single file
+preprocessor.process_audio(
+    input_path="noisy_audio.wav",
+    output_path="clean_audio.wav",
+    model_path="./models/fullsubnet_plus"
+)
+```
+
+### Batch Processing
+```python
+import os
+from fullsubnet_denoiser import AudioPreprocessor
+
+preprocessor = AudioPreprocessor()
+
+input_dir = "noisy_audios/"
+output_dir = "clean_audios/"
+
+for filename in os.listdir(input_dir):
+    if filename.endswith(('.wav', '.mp3', '.flac')):
+        input_path = os.path.join(input_dir, filename)
+        output_path = os.path.join(output_dir, f"clean_{filename}")
+        
+        preprocessor.process_audio(input_path, output_path)
+```
+
+## Configuration Options
+
+### Command Line Arguments:
+- `--input`: Input audio file path (required)
+- `--output`: Output audio file path (required)
+- `--model-path`: Path to FullSubNet+ model directory (default: ./models/fullsubnet_plus)
+- `--sample-rate`: Target sample rate (default: 16000)
+- `--device`: Processing device (auto/cpu/cuda)
+- `--no-enhancement`: Skip speech enhancement
+- `--no-normalization`: Skip audio normalization
+- `--no-filtering`: Skip high-pass filtering
+
+### Processing Pipeline:
+1. **Audio Loading**: Supports WAV, MP3, FLAC formats
+2. **Resampling**: Converts to target sample rate (16kHz default)
+3. **High-pass Filtering**: Removes low-frequency noise (80Hz cutoff)
+4. **Speech Enhancement**: FullSubNet+ denoising
+5. **Normalization**: Audio level adjustment
+6. **Output**: 16-bit PCM WAV format
+
+## Model Acquisition
+
+To get FullSubNet+ models:
+
+1. **Official Repository**: Check the official FullSubNet+ GitHub repository
+2. **Pre-trained Models**: Look for released checkpoints
+3. **Custom Training**: Train your own model on your data
+
+Example model sources:
+- [FullSubNet Official Repository](https://github.com/hit-thusz-RookieCJ/FullSubNet-plus)
+- Pre-trained models on speech enhancement datasets
+- Domain-specific models for call audio
+
+## Troubleshooting
+
+### Common Issues:
+
+1. **Model Not Found**:
+   - Ensure model files are in the correct directory
+   - Check file permissions
+   - Verify model file format (.pth, .pt, .bin)
+
+2. **CUDA Out of Memory**:
+   - Use `--device cpu` for CPU processing
+   - Reduce batch size in the code
+   - Process shorter audio segments
+
+3. **Audio Format Issues**:
+   - Install additional codecs: `pip install librosa[display]`
+   - Convert audio to WAV format first
+   - Check sample rate compatibility
+
+4. **Performance Issues**:
+   - Use GPU for faster processing
+   - Enable mixed precision training
+   - Optimize model parameters
+
+### Fallback Mode:
+If FullSubNet+ model loading fails, the script automatically uses spectral subtraction as a fallback denoising method.
+
+## Integration with ASR
+
+The output audio is optimized for ASR systems:
+- 16kHz sample rate (standard for speech recognition)
+- Mono channel audio
+- Normalized amplitude levels
+- Reduced background noise
+- Enhanced speech clarity
+
+Example integration with Whisper:
+```python
+import whisper
+from fullsubnet_denoiser import AudioPreprocessor
+
+# Enhance audio first
+preprocessor = AudioPreprocessor()
+preprocessor.process_audio("noisy_call.wav", "clean_call.wav")
+
+# Then use with ASR
+model = whisper.load_model("base")
+result = model.transcribe("clean_call.wav")
+print(result["text"])
+```
