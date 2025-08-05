@@ -15,12 +15,12 @@ Requirements:
 - scipy
 
 Usage:
-    python fullsubnet_denoiser.py --input input_audio.wav --output clean_audio.wav
+    1. Set the INPUT_AUDIO_PATH and OUTPUT_AUDIO_PATH variables below
+    2. Run: python fullsubnet_denoiser.py
 """
 
 import os
 import sys
-import argparse
 import warnings
 import logging
 from pathlib import Path
@@ -32,6 +32,23 @@ import librosa
 import soundfile as sf
 import numpy as np
 from scipy.signal import resample
+
+# ==================== CONFIGURATION ====================
+# Set your input and output file paths here
+INPUT_AUDIO_PATH = "path/to/your/noisy_audio.wav"
+OUTPUT_AUDIO_PATH = "path/to/your/clean_audio.wav"
+
+# Model configuration
+MODEL_PATH = "./models/fullsubnet_plus"
+SAMPLE_RATE = 16000
+DEVICE = "auto"  # "auto", "cpu", or "cuda"
+
+# Processing options (True to enable, False to disable)
+APPLY_ENHANCEMENT = True      # Use FullSubNet for speech enhancement
+APPLY_NORMALIZATION = True    # Normalize audio levels
+APPLY_FILTERING = True        # Apply high-pass filter
+
+# ========================================================
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -84,18 +101,22 @@ class FullSubNetPlusProcessor:
         try:
             # Check if model directory exists
             if not self.model_path.exists():
-                raise FileNotFoundError(f"Model directory not found: {self.model_path}")
+                logger.warning(f"Model directory not found: {self.model_path}")
+                logger.info("Will use fallback spectral subtraction method")
+                return None
             
             # Look for model files
             model_file = None
-            for ext in ['.pth', '.pt', '.bin']:
+            for ext in ['.pth', '.pt', '.bin', '.tar']:
                 potential_files = list(self.model_path.glob(f"*{ext}"))
                 if potential_files:
                     model_file = potential_files[0]
                     break
             
             if model_file is None:
-                raise FileNotFoundError(f"No model file found in {self.model_path}")
+                logger.warning(f"No model file found in {self.model_path}")
+                logger.info("Will use fallback spectral subtraction method")
+                return None
             
             logger.info(f"Loading model from: {model_file}")
             
@@ -103,21 +124,30 @@ class FullSubNetPlusProcessor:
             checkpoint = torch.load(model_file, map_location=self.device)
             
             # Create model instance (you may need to adjust this based on your model structure)
-            from fullsubnet_plus.model import FullSubNetPlus
-            
-            model = FullSubNetPlus(
-                n_fft=self.n_fft,
-                hop_length=self.hop_length,
-                win_length=self.win_length
-            )
+            try:
+                from fullsubnet_plus.model import FullSubNetPlus
+                
+                model = FullSubNetPlus(
+                    n_fft=self.n_fft,
+                    hop_length=self.hop_length,
+                    win_length=self.win_length
+                )
+            except ImportError:
+                logger.warning("Could not import FullSubNet+ model class")
+                logger.info("Will use fallback spectral subtraction method")
+                return None
             
             # Load state dict
-            if 'model' in checkpoint:
-                model.load_state_dict(checkpoint['model'])
-            elif 'state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['state_dict'])
-            else:
-                model.load_state_dict(checkpoint)
+            try:
+                if 'model' in checkpoint:
+                    model.load_state_dict(checkpoint['model'])
+                elif 'state_dict' in checkpoint:
+                    model.load_state_dict(checkpoint['state_dict'])
+                else:
+                    model.load_state_dict(checkpoint)
+            except Exception as e:
+                logger.warning(f"Could not load model state dict: {e}")
+                return None
             
             model.to(self.device)
             model.eval()
@@ -127,8 +157,7 @@ class FullSubNetPlusProcessor:
             
         except Exception as e:
             logger.error(f"Error loading model: {e}")
-            # Fallback: create a dummy model for demonstration
-            logger.warning("Using fallback spectral subtraction method")
+            logger.warning("Will use fallback spectral subtraction method")
             return None
     
     def _stft(self, waveform: torch.Tensor) -> torch.Tensor:
@@ -411,53 +440,68 @@ class AudioPreprocessor:
 
 
 def main():
-    """Main function for command-line usage."""
-    parser = argparse.ArgumentParser(description="FullSubNet+ Audio Denoising and Enhancement")
-    parser.add_argument("--input", "-i", required=True, help="Input audio file path")
-    parser.add_argument("--output", "-o", required=True, help="Output audio file path")
-    parser.add_argument("--model-path", "-m", default="./models/fullsubnet_plus", 
-                       help="Path to FullSubNet+ model directory")
-    parser.add_argument("--sample-rate", "-sr", type=int, default=16000, 
-                       help="Target sample rate (default: 16000)")
-    parser.add_argument("--no-enhancement", action="store_true", 
-                       help="Skip speech enhancement")
-    parser.add_argument("--no-normalization", action="store_true", 
-                       help="Skip audio normalization")
-    parser.add_argument("--no-filtering", action="store_true", 
-                       help="Skip high-pass filtering")
-    parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
-                       help="Device for inference")
+    """Main function - processes audio using the configured file paths."""
     
-    args = parser.parse_args()
+    # Validate configuration
+    if INPUT_AUDIO_PATH == "path/to/your/noisy_audio.wav":
+        logger.error("Please set INPUT_AUDIO_PATH to your actual input file!")
+        logger.info("Edit the script and change INPUT_AUDIO_PATH at the top")
+        sys.exit(1)
     
-    # Validate input file
-    if not os.path.exists(args.input):
-        logger.error(f"Input file not found: {args.input}")
+    if OUTPUT_AUDIO_PATH == "path/to/your/clean_audio.wav":
+        logger.error("Please set OUTPUT_AUDIO_PATH to your desired output file!")
+        logger.info("Edit the script and change OUTPUT_AUDIO_PATH at the top")
+        sys.exit(1)
+    
+    # Validate input file exists
+    if not os.path.exists(INPUT_AUDIO_PATH):
+        logger.error(f"Input file not found: {INPUT_AUDIO_PATH}")
         sys.exit(1)
     
     # Create output directory if needed
-    output_dir = os.path.dirname(args.output)
+    output_dir = os.path.dirname(OUTPUT_AUDIO_PATH)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        logger.info(f"Created output directory: {output_dir}")
     
     try:
+        # Print configuration
+        logger.info("="*60)
+        logger.info("FULLSUBNET AUDIO PROCESSING")
+        logger.info("="*60)
+        logger.info(f"Input file: {INPUT_AUDIO_PATH}")
+        logger.info(f"Output file: {OUTPUT_AUDIO_PATH}")
+        logger.info(f"Model path: {MODEL_PATH}")
+        logger.info(f"Sample rate: {SAMPLE_RATE} Hz")
+        logger.info(f"Device: {DEVICE}")
+        logger.info(f"Enhancement: {'ON' if APPLY_ENHANCEMENT else 'OFF'}")
+        logger.info(f"Normalization: {'ON' if APPLY_NORMALIZATION else 'OFF'}")
+        logger.info(f"Filtering: {'ON' if APPLY_FILTERING else 'OFF'}")
+        logger.info("="*60)
+        
         # Initialize preprocessor
-        preprocessor = AudioPreprocessor(target_sr=args.sample_rate)
+        preprocessor = AudioPreprocessor(target_sr=SAMPLE_RATE)
         
         # Process audio
         preprocessor.process_audio(
-            input_path=args.input,
-            output_path=args.output,
-            model_path=args.model_path,
-            apply_enhancement=not args.no_enhancement,
-            apply_normalization=not args.no_normalization,
-            apply_filtering=not args.no_filtering
+            input_path=INPUT_AUDIO_PATH,
+            output_path=OUTPUT_AUDIO_PATH,
+            model_path=MODEL_PATH,
+            apply_enhancement=APPLY_ENHANCEMENT,
+            apply_normalization=APPLY_NORMALIZATION,
+            apply_filtering=APPLY_FILTERING
         )
         
-        logger.info("Processing completed successfully!")
+        logger.info("="*60)
+        logger.info("✅ PROCESSING COMPLETED SUCCESSFULLY!")
+        logger.info(f"Enhanced audio saved to: {OUTPUT_AUDIO_PATH}")
+        logger.info("="*60)
         
     except Exception as e:
-        logger.error(f"Processing failed: {e}")
+        logger.error("="*60)
+        logger.error("❌ PROCESSING FAILED!")
+        logger.error(f"Error: {e}")
+        logger.error("="*60)
         sys.exit(1)
 
 
