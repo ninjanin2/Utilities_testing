@@ -527,4 +527,85 @@ class AudioPreprocessor:
             waveform = self.normalize_audio(waveform)
         
         # Save processed audio
-   
+        self.save_audio(waveform, output_path)
+        
+        logger.info("Audio processing completed successfully")
+
+
+def main():
+    """Main function - processes audio using the configured file paths."""
+    
+    # Validate configuration
+    if INPUT_AUDIO_PATH == "path/to/your/noisy_audio.wav":
+        logger.error("Please set INPUT_AUDIO_PATH to your actual input file!")
+        logger.info("Edit the script and change INPUT_AUDIO_PATH at the top")
+        sys.exit(1)
+    
+    if OUTPUT_AUDIO_PATH == "path/to/your/clean_audio.wav":
+        logger.error("Please set OUTPUT_AUDIO_PATH to your desired output file!")
+        logger.info("Edit the script and change OUTPUT_AUDIO_PATH at the top")
+        sys.exit(1)
+    
+    # Validate input file exists
+    if not os.path.exists(INPUT_AUDIO_PATH):
+        logger.error(f"Input file not found: {INPUT_AUDIO_PATH}")
+        sys.exit(1)
+    
+    # Create output directory if needed
+    output_dir = os.path.dirname(OUTPUT_AUDIO_PATH)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        logger.info(f"Created output directory: {output_dir}")
+    
+    try:
+        # Print configuration
+        logger.info("="*60)
+        logger.info("CLEANUNET AUDIO PROCESSING")
+        logger.info("="*60)
+        logger.info(f"Input file: {INPUT_AUDIO_PATH}")
+        logger.info(f"Output file: {OUTPUT_AUDIO_PATH}")
+        logger.info(f"Model path: {MODEL_PATH}")
+        logger.info(f"Sample rate: {SAMPLE_RATE} Hz")
+        logger.info(f"Device: {DEVICE}")
+        logger.info(f"Enhancement: {'ON' if APPLY_ENHANCEMENT else 'OFF'}")
+        logger.info(f"Normalization: {'ON' if APPLY_NORMALIZATION else 'OFF'}")
+        logger.info(f"Filtering: {'ON' if APPLY_FILTERING else 'OFF'}")
+        logger.info("="*60)
+        
+        # Debug: List files in model directory
+        model_dir = Path(MODEL_PATH)
+        if model_dir.exists():
+            logger.info(f"Files in model directory {MODEL_PATH}:")
+            for file in model_dir.iterdir():
+                logger.info(f"  - {file.name}")
+        else:
+            logger.warning(f"Model directory does not exist: {MODEL_PATH}")
+        
+        # Initialize preprocessor
+        preprocessor = AudioPreprocessor(target_sr=SAMPLE_RATE)
+        
+        # Process audio
+        preprocessor.process_audio(
+            input_path=INPUT_AUDIO_PATH,
+            output_path=OUTPUT_AUDIO_PATH,
+            model_path=MODEL_PATH,
+            apply_enhancement=APPLY_ENHANCEMENT,
+            apply_normalization=APPLY_NORMALIZATION,
+            apply_filtering=APPLY_FILTERING
+        )
+        
+        logger.info("="*60)
+        logger.info("✅ PROCESSING COMPLETED SUCCESSFULLY!")
+        logger.info(f"Enhanced audio saved to: {OUTPUT_AUDIO_PATH}")
+        logger.info("="*60)
+        
+    except Exception as e:
+        logger.error("="*60)
+        logger.error("❌ PROCESSING FAILED!")
+        logger.error(f"Error: {e}")
+        logger.error("="*60)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
