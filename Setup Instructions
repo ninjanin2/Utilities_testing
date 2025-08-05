@@ -30,6 +30,8 @@ mkdir -p models/fullsubnet_plus
 wget -O models/fullsubnet_plus/fullsubnet_plus.pth [MODEL_URL]
 ```
 
+##Hugging face Link for the model : https://huggingface.co/fronx/Fast-FullSubNet
+
 ## Model Directory Structure
 
 Your model directory should look like:
