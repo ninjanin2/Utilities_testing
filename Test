@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""
+FullSubNet+ Audio Denoising and Speech Enhancement Script
+========================================================
+
+This script uses FullSubNet+ for offline speech enhancement and denoising
+of noisy call audio recordings. The output is clean audio ready for ASR.
+
+Requirements:
+- torch
+- torchaudio
+- librosa
+- soundfile
+- numpy
+- scipy
+
+Usage:
+    python fullsubnet_denoiser.py --input input_audio.wav --output clean_audio.wav
+"""
+
+import os
+import sys
+import argparse
+import warnings
+import logging
+from pathlib import Path
+from typing import Tuple, Optional, Union
+
+import torch
+import torchaudio
+import librosa
+import soundfile as sf
+import numpy as np
+from scipy.signal import resample
+
+# Suppress warnings
+warnings.filterwarnings("ignore")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+class FullSubNetPlusProcessor:
+    """FullSubNet+ processor for speech enhancement and denoising."""
+    
+    def __init__(self, 
+                 model_path: str = "./models/fullsubnet_plus",
+                 device: str = "auto",
+                 sample_rate: int = 16000,
+                 n_fft: int = 512,
+                 hop_length: int = 256,
+                 win_length: int = 512):
+        """
+        Initialize FullSubNet+ processor.
+        
+        Args:
+            model_path: Path to the FullSubNet+ model directory
+            device: Device to run inference on ('auto', 'cpu', 'cuda')
+            sample_rate: Target sample rate for processing
+            n_fft: FFT size for STFT
+            hop_length: Hop length for STFT
+            win_length: Window length for STFT
+        """
+        self.model_path = Path(model_path)
+        self.sample_rate = sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        
+        # Set device
+        if device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+        
+        logger.info(f"Using device: {self.device}")
+        
+        # Load model
+        self.model = self._load_model()
+        
+    def _load_model(self):
+        """Load FullSubNet+ model from local directory."""
+        try:
+            # Check if model directory exists
+            if not self.model_path.exists():
+                raise FileNotFoundError(f"Model directory not found: {self.model_path}")
+            
+            # Look for model files
+            model_file = None
+            for ext in ['.pth', '.pt', '.bin']:
+                potential_files = list(self.model_path.glob(f"*{ext}"))
+                if potential_files:
+                    model_file = potential_files[0]
+                    break
+            
+            if model_file is None:
+                raise FileNotFoundError(f"No model file found in {self.model_path}")
+            
+            logger.info(f"Loading model from: {model_file}")
+            
+            # Load model checkpoint
+            checkpoint = torch.load(model_file, map_location=self.device)
+            
+            # Create model instance (you may need to adjust this based on your model structure)
+            from fullsubnet_plus.model import FullSubNetPlus
+            
+            model = FullSubNetPlus(
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                win_length=self.win_length
+            )
+            
+            # Load state dict
+            if 'model' in checkpoint:
+                model.load_state_dict(checkpoint['model'])
+            elif 'state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['state_dict'])
+            else:
+                model.load_state_dict(checkpoint)
+            
+            model.to(self.device)
+            model.eval()
+            
+            logger.info("Model loaded successfully")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            # Fallback: create a dummy model for demonstration
+            logger.warning("Using fallback spectral subtraction method")
+            return None
+    
+    def _stft(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Compute Short-Time Fourier Transform."""
+        return torch.stft(
+            waveform,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=torch.hann_window(self.win_length).to(waveform.device),
+            return_complex=True
+        )
+    
+    def _istft(self, stft_matrix: torch.Tensor) -> torch.Tensor:
+        """Compute Inverse Short-Time Fourier Transform."""
+        return torch.istft(
+            stft_matrix,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=torch.hann_window(self.win_length).to(stft_matrix.device)
+        )
+    
+    def _spectral_subtraction_fallback(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Fallback method using spectral subtraction for denoising."""
+        logger.info("Applying spectral subtraction denoising")
+        
+        # Convert to STFT
+        stft = self._stft(waveform)
+        magnitude = torch.abs(stft)
+        phase = torch.angle(stft)
+        
+        # Estimate noise from first 0.5 seconds
+        noise_frames = int(0.5 * self.sample_rate / self.hop_length)
+        noise_magnitude = torch.mean(magnitude[:, :noise_frames], dim=1, keepdim=True)
+        
+        # Spectral subtraction
+        alpha = 2.0  # Over-subtraction factor
+        beta = 0.01  # Spectral floor
+        
+        enhanced_magnitude = magnitude - alpha * noise_magnitude
+        enhanced_magnitude = torch.maximum(enhanced_magnitude, beta * magnitude)
+        
+        # Reconstruct signal
+        enhanced_stft = enhanced_magnitude * torch.exp(1j * phase)
+        enhanced_waveform = self._istft(enhanced_stft)
+        
+        return enhanced_waveform
+    
+    def enhance_audio(self, waveform: torch.Tensor) -> torch.Tensor:
+        """
+        Enhance audio using FullSubNet+ or fallback method.
+        
+        Args:
+            waveform: Input waveform tensor [channels, samples]
+            
+        Returns:
+            Enhanced waveform tensor
+        """
+        with torch.no_grad():
+            if self.model is not None:
+                try:
+                    # Use FullSubNet+ model
+                    logger.info("Enhancing audio with FullSubNet+")
+                    
+                    # Ensure single channel
+                    if waveform.dim() > 1 and waveform.size(0) > 1:
+                        waveform = torch.mean(waveform, dim=0, keepdim=True)
+                    
+                    # Add batch dimension if needed
+                    if waveform.dim() == 1:
+                        waveform = waveform.unsqueeze(0)
+                    if waveform.dim() == 2:
+                        waveform = waveform.unsqueeze(0)
+                    
+                    # Move to device
+                    waveform = waveform.to(self.device)
+                    
+                    # Run inference
+                    enhanced = self.model(waveform)
+                    
+                    # Remove batch dimension
+                    if enhanced.dim() == 3:
+                        enhanced = enhanced.squeeze(0)
+                    
+                    return enhanced
+                    
+                except Exception as e:
+                    logger.warning(f"FullSubNet+ inference failed: {e}, using fallback")
+                    return self._spectral_subtraction_fallback(waveform.squeeze(0))
+            else:
+                # Use fallback method
+                if waveform.dim() > 1 and waveform.size(0) > 1:
+                    waveform = torch.mean(waveform, dim=0)
+                return self._spectral_subtraction_fallback(waveform)
+
+
+class AudioPreprocessor:
+    """Audio preprocessing pipeline for ASR preparation."""
+    
+    def __init__(self, target_sr: int = 16000):
+        """
+        Initialize audio preprocessor.
+        
+        Args:
+            target_sr: Target sample rate for output
+        """
+        self.target_sr = target_sr
+        self.processor = None
+    
+    def load_audio(self, file_path: str) -> Tuple[torch.Tensor, int]:
+        """
+        Load audio file.
+        
+        Args:
+            file_path: Path to audio file
+            
+        Returns:
+            Tuple of (waveform, sample_rate)
+        """
+        try:
+            # Try with torchaudio first
+            waveform, sr = torchaudio.load(file_path)
+            logger.info(f"Loaded audio: {waveform.shape}, SR: {sr}")
+            return waveform, sr
+            
+        except Exception as e:
+            logger.warning(f"torchaudio failed: {e}, trying librosa")
+            try:
+                # Fallback to librosa
+                waveform, sr = librosa.load(file_path, sr=None, mono=False)
+                if waveform.ndim == 1:
+                    waveform = waveform[None, :]  # Add channel dimension
+                waveform = torch.from_numpy(waveform)
+                return waveform, sr
+            except Exception as e2:
+                raise RuntimeError(f"Failed to load audio with both torchaudio and librosa: {e2}")
+    
+    def resample_audio(self, waveform: torch.Tensor, orig_sr: int) -> torch.Tensor:
+        """
+        Resample audio to target sample rate.
+        
+        Args:
+            waveform: Input waveform
+            orig_sr: Original sample rate
+            
+        Returns:
+            Resampled waveform
+        """
+        if orig_sr == self.target_sr:
+            return waveform
+        
+        logger.info(f"Resampling from {orig_sr} Hz to {self.target_sr} Hz")
+        
+        try:
+            # Use torchaudio resampler
+            resampler = torchaudio.transforms.Resample(orig_sr, self.target_sr)
+            return resampler(waveform)
+        except:
+            # Fallback to scipy
+            logger.warning("Using scipy for resampling")
+            waveform_np = waveform.numpy()
+            num_samples = int(waveform_np.shape[-1] * self.target_sr / orig_sr)
+            resampled = resample(waveform_np, num_samples, axis=-1)
+            return torch.from_numpy(resampled)
+    
+    def normalize_audio(self, waveform: torch.Tensor, target_lufs: float = -23.0) -> torch.Tensor:
+        """
+        Normalize audio level.
+        
+        Args:
+            waveform: Input waveform
+            target_lufs: Target loudness in LUFS
+            
+        Returns:
+            Normalized waveform
+        """
+        # Simple RMS normalization (for more accurate LUFS, use pyloudnorm)
+        rms = torch.sqrt(torch.mean(waveform**2))
+        if rms > 0:
+            target_rms = 0.1  # Approximate target RMS
+            scaling_factor = target_rms / rms
+            waveform = waveform * scaling_factor
+        
+        # Prevent clipping
+        max_val = torch.max(torch.abs(waveform))
+        if max_val > 0.95:
+            waveform = waveform * (0.95 / max_val)
+        
+        return waveform
+    
+    def apply_highpass_filter(self, waveform: torch.Tensor, cutoff: float = 80.0) -> torch.Tensor:
+        """
+        Apply high-pass filter to remove low-frequency noise.
+        
+        Args:
+            waveform: Input waveform
+            cutoff: Cutoff frequency in Hz
+            
+        Returns:
+            Filtered waveform
+        """
+        try:
+            # Use torchaudio's high-pass filter
+            highpass = torchaudio.transforms.Highpass(self.target_sr, cutoff)
+            return highpass(waveform)
+        except:
+            # Simple high-pass using difference
+            logger.warning("Using simple high-pass filter")
+            alpha = cutoff / (cutoff + self.target_sr)
+            filtered = torch.zeros_like(waveform)
+            filtered[:, 1:] = alpha * (waveform[:, 1:] - waveform[:, :-1])
+            return filtered
+    
+    def save_audio(self, waveform: torch.Tensor, file_path: str):
+        """
+        Save processed audio.
+        
+        Args:
+            waveform: Processed waveform
+            file_path: Output file path
+        """
+        # Ensure waveform is in correct format for saving
+        if waveform.dim() == 1:
+            waveform = waveform.unsqueeze(0)
+        
+        # Convert to numpy and transpose for soundfile
+        waveform_np = waveform.numpy()
+        if waveform_np.shape[0] == 1:
+            waveform_np = waveform_np.squeeze(0)  # Remove channel dimension for mono
+        
+        # Save using soundfile
+        sf.write(file_path, waveform_np, self.target_sr, subtype='PCM_16')
+        logger.info(f"Saved enhanced audio to: {file_path}")
+    
+    def process_audio(self, 
+                     input_path: str, 
+                     output_path: str,
+                     model_path: str = "./models/fullsubnet_plus",
+                     apply_enhancement: bool = True,
+                     apply_normalization: bool = True,
+                     apply_filtering: bool = True) -> None:
+        """
+        Complete audio processing pipeline.
+        
+        Args:
+            input_path: Input audio file path
+            output_path: Output audio file path
+            model_path: Path to FullSubNet+ model
+            apply_enhancement: Whether to apply speech enhancement
+            apply_normalization: Whether to normalize audio level
+            apply_filtering: Whether to apply high-pass filtering
+        """
+        logger.info(f"Processing audio: {input_path} -> {output_path}")
+        
+        # Load audio
+        waveform, orig_sr = self.load_audio(input_path)
+        
+        # Resample to target rate
+        waveform = self.resample_audio(waveform, orig_sr)
+        
+        # Apply high-pass filter
+        if apply_filtering:
+            waveform = self.apply_highpass_filter(waveform)
+        
+        # Apply speech enhancement
+        if apply_enhancement:
+            if self.processor is None:
+                self.processor = FullSubNetPlusProcessor(model_path, sample_rate=self.target_sr)
+            waveform = self.processor.enhance_audio(waveform)
+        
+        # Normalize audio level
+        if apply_normalization:
+            waveform = self.normalize_audio(waveform)
+        
+        # Save processed audio
+        self.save_audio(waveform, output_path)
+        
+        logger.info("Audio processing completed successfully")
+
+
+def main():
+    """Main function for command-line usage."""
+    parser = argparse.ArgumentParser(description="FullSubNet+ Audio Denoising and Enhancement")
+    parser.add_argument("--input", "-i", required=True, help="Input audio file path")
+    parser.add_argument("--output", "-o", required=True, help="Output audio file path")
+    parser.add_argument("--model-path", "-m", default="./models/fullsubnet_plus", 
+                       help="Path to FullSubNet+ model directory")
+    parser.add_argument("--sample-rate", "-sr", type=int, default=16000, 
+                       help="Target sample rate (default: 16000)")
+    parser.add_argument("--no-enhancement", action="store_true", 
+                       help="Skip speech enhancement")
+    parser.add_argument("--no-normalization", action="store_true", 
+                       help="Skip audio normalization")
+    parser.add_argument("--no-filtering", action="store_true", 
+                       help="Skip high-pass filtering")
+    parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
+                       help="Device for inference")
+    
+    args = parser.parse_args()
+    
+    # Validate input file
+    if not os.path.exists(args.input):
+        logger.error(f"Input file not found: {args.input}")
+        sys.exit(1)
+    
+    # Create output directory if needed
+    output_dir = os.path.dirname(args.output)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    try:
+        # Initialize preprocessor
+        preprocessor = AudioPreprocessor(target_sr=args.sample_rate)
+        
+        # Process audio
+        preprocessor.process_audio(
+            input_path=args.input,
+            output_path=args.output,
+            model_path=args.model_path,
+            apply_enhancement=not args.no_enhancement,
+            apply_normalization=not args.no_normalization,
+            apply_filtering=not args.no_filtering
+        )
+        
+        logger.info("Processing completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Processing failed: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
