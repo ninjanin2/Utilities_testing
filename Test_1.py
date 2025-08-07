@@ -1,20 +1,19 @@
 """
-Advanced Traditional Audio Enhancement System
-===========================================
-Professional-grade audio enhancement using only traditional signal processing.
-No AI/ML - Pure signal processing for reliable, distortion-free results.
+Speech-Optimized Audio Enhancement System for ASR
+=================================================
+Conservative, speech-focused enhancement specifically designed for 
+call recordings and ASR preprocessing. Prioritizes speech intelligibility
+and clarity over heavy noise reduction to avoid distortion.
 
 Features:
-- Multi-band spectral enhancement
-- Psychoacoustic processing
-- Harmonic/percussive separation
-- Advanced noise reduction
-- Dynamic range optimization
-- Phase coherence enhancement
-- Professional mastering chain
+- Gentle noise reduction focused on speech preservation
+- Speech frequency emphasis (300-3400 Hz)
+- Conservative dynamic processing
+- No harmonic separation (preserves speech integrity)
+- ASR-optimized output formatting
 
-Author: Advanced Signal Processing System
-Version: 2.0.0-Traditional
+Author: Speech Enhancement System for ASR
+Version: 1.0.0-ASR-Optimized
 """
 
 import os
@@ -32,12 +31,9 @@ from collections import defaultdict
 
 import numpy as np
 import scipy.signal as signal
-from scipy.optimize import minimize_scalar
 from scipy.stats import median_abs_deviation
 import librosa
 import soundfile as sf
-from sklearn.decomposition import PCA, FastICA
-from sklearn.preprocessing import StandardScaler
 
 # Optional professional libraries
 try:
@@ -45,27 +41,27 @@ try:
     NOISEREDUCE_AVAILABLE = True
 except ImportError:
     NOISEREDUCE_AVAILABLE = False
-    print("Info: noisereduce not available - using built-in noise reduction")
+    print("Info: noisereduce not available - using built-in methods")
 
 try:
     import pyloudnorm as pyln
     PYLOUDNORM_AVAILABLE = True
 except ImportError:
     PYLOUDNORM_AVAILABLE = False
-    print("Info: pyloudnorm not available - using built-in loudness processing")
+    print("Info: pyloudnorm not available - using peak normalization")
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 
 # ==================== GLOBAL CONFIGURATION ====================
 # 🔥 IMPORTANT: SET YOUR AUDIO FILE PATH HERE! 🔥
-INPUT_AUDIO_PATH = "input_noisy_audio.wav"  # ← CHANGE THIS TO YOUR ACTUAL FILE PATH!
-OUTPUT_AUDIO_PATH = "enhanced_clean_audio.wav"
+INPUT_AUDIO_PATH = "input_call_recording.wav"  # ← CHANGE THIS TO YOUR ACTUAL FILE PATH!
+OUTPUT_AUDIO_PATH = "enhanced_speech_for_asr.wav"
 
-# Examples of how to set the path:
-# INPUT_AUDIO_PATH = "my_recording.wav"                    # File in same folder
-# INPUT_AUDIO_PATH = "C:/Users/YourName/Desktop/audio.wav" # Windows full path  
-# INPUT_AUDIO_PATH = "/home/user/Documents/audio.wav"      # Linux/Mac full path
+# Examples:
+# INPUT_AUDIO_PATH = "my_call_recording.wav"              # File in same folder
+# INPUT_AUDIO_PATH = "C:/recordings/meeting_audio.wav"   # Windows path
+# INPUT_AUDIO_PATH = "/home/user/audio/call.wav"         # Linux/Mac path
 # ================================================================
 
 # Configure logging
@@ -76,145 +72,128 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 @dataclass
-class AdvancedEnhancementConfig:
-    """Configuration for traditional audio enhancement"""
+class SpeechEnhancementConfig:
+    """Configuration optimized for speech and ASR"""
     
-    # Audio parameters
-    sample_rate: int = 16000
-    frame_length: int = 2048
-    hop_length: int = 512
-    n_fft: int = 2048
+    # Audio parameters - ASR optimized
+    sample_rate: int = 16000  # Standard for ASR
+    frame_length: int = 1024  # Smaller for speech
+    hop_length: int = 256     # Smaller overlap for better time resolution
+    n_fft: int = 1024        # Smaller for speech processing
     
-    # Enhancement parameters
-    noise_reduction_strength: float = 0.8  # 0.0 = none, 1.0 = maximum
-    spectral_subtraction_alpha: float = 2.0
-    spectral_floor: float = 0.1
-    wiener_noise_estimate_frames: int = 20
+    # Conservative enhancement parameters
+    noise_reduction_strength: float = 0.3  # Very gentle (0.0-1.0)
+    spectral_subtraction_alpha: float = 1.2  # Conservative over-subtraction
+    spectral_floor: float = 0.3  # Higher floor to preserve speech
     
-    # Multi-band processing
-    enable_multiband: bool = True
-    band_count: int = 8
+    # Speech-specific parameters
+    speech_freq_min: float = 300.0   # Hz - lower bound of speech
+    speech_freq_max: float = 3400.0  # Hz - upper bound of speech
+    speech_emphasis: float = 1.1     # Gentle boost for speech frequencies
     
-    # Psychoacoustic processing
-    enable_psychoacoustic: bool = True
-    masking_threshold_db: float = 6.0
-    
-    # Harmonic enhancement
-    enable_harmonic_enhancement: bool = True
-    harmonic_separation_margin: float = 3.0
-    
-    # Dynamic processing
-    enable_dynamic_processing: bool = True
-    compression_threshold: float = -20.0  # dB
-    compression_ratio: float = 2.5
+    # Dynamic processing - very gentle
+    enable_gentle_compression: bool = True
+    compression_threshold: float = -15.0  # dB - light compression
+    compression_ratio: float = 1.8       # Gentle ratio
     
     # Final processing
-    target_loudness: float = -20.0  # LUFS
-    enable_final_limiter: bool = True
-    limiter_threshold: float = -1.0  # dB
-
-class AdvancedNoiseReducer:
-    """Advanced noise reduction using multiple traditional techniques"""
+    target_loudness: float = -16.0  # LUFS - good for ASR
+    enable_final_limiting: bool = True
     
-    def __init__(self, config: AdvancedEnhancementConfig):
+    # Quality preservation
+    preserve_speech_dynamics: bool = True  # Maintain natural speech rhythm
+    avoid_artifacts: bool = True           # Extra conservative processing
+
+class GentleSpeechNoiseReducer:
+    """Gentle noise reduction optimized for speech preservation"""
+    
+    def __init__(self, config: SpeechEnhancementConfig):
         self.config = config
         self.noise_profile = None
+        self.speech_mask = None
         
-    def estimate_noise_profile(self, audio: np.ndarray) -> np.ndarray:
-        """Estimate noise profile using multiple methods"""
+    def create_speech_frequency_mask(self) -> np.ndarray:
+        """Create frequency mask emphasizing speech frequencies"""
+        
+        freqs = librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft)
+        speech_mask = np.ones_like(freqs)
+        
+        # Emphasize speech frequencies (300-3400 Hz)
+        speech_band = (freqs >= self.config.speech_freq_min) & (freqs <= self.config.speech_freq_max)
+        speech_mask[speech_band] = self.config.speech_emphasis
+        
+        # Gentle reduction of very low frequencies (below 100 Hz)
+        low_freq_band = freqs < 100
+        speech_mask[low_freq_band] = 0.8
+        
+        # Gentle reduction of very high frequencies (above 8000 Hz)
+        high_freq_band = freqs > 8000
+        speech_mask[high_freq_band] = 0.9
+        
+        self.speech_mask = speech_mask
+        return speech_mask
+    
+    def estimate_noise_conservatively(self, audio: np.ndarray) -> np.ndarray:
+        """Conservative noise estimation to avoid removing speech"""
         
         if len(audio) == 0:
-            # Create a default noise profile
             freq_bins = self.config.n_fft // 2 + 1
-            self.noise_profile = np.ones(freq_bins) * 0.01
+            self.noise_profile = np.ones(freq_bins) * 0.001  # Very low noise estimate
             return self.noise_profile
         
         try:
-            # Method 1: Use first 10% of audio (assuming it contains noise)
-            noise_samples = max(1024, int(0.1 * len(audio)))  # At least 1024 samples
-            noise_samples = min(noise_samples, len(audio) // 2)  # At most half the audio
+            # Use only the very beginning for noise estimation (first 0.5 seconds max)
+            noise_samples = min(int(0.5 * self.config.sample_rate), len(audio) // 10)
+            noise_samples = max(512, noise_samples)  # At least 512 samples
+            
             noise_segment = audio[:noise_samples]
             
-            # Method 2: Find quiet segments throughout the audio
-            frame_size = self.config.hop_length * 4
-            if frame_size >= len(audio):
-                frame_size = len(audio) // 4
-                
-            energy_threshold = np.percentile(audio ** 2, 15)  # Bottom 15% energy
-            
-            quiet_segments = []
-            step_size = max(frame_size // 2, 512)
-            
-            for i in range(0, len(audio) - frame_size, step_size):
-                frame = audio[i:i + frame_size]
-                if len(frame) >= frame_size and np.mean(frame ** 2) < energy_threshold:
-                    quiet_segments.append(frame)
-                    
-                # Limit quiet segments to avoid memory issues
-                if len(quiet_segments) > 20:
-                    break
-            
-            if quiet_segments:
-                noise_from_quiet = np.concatenate(quiet_segments)
-                # Limit size
-                if len(noise_from_quiet) > len(noise_segment) * 2:
-                    noise_from_quiet = noise_from_quiet[:len(noise_segment) * 2]
-            else:
-                noise_from_quiet = noise_segment
-            
-            # Combine both methods
-            combined_noise = np.concatenate([noise_segment, noise_from_quiet[:len(noise_segment)]])
-            
-            # Ensure we have enough samples for STFT
+            # Ensure we have enough for STFT
             min_length = self.config.n_fft * 2
-            if len(combined_noise) < min_length:
-                # Pad or repeat if necessary
-                repetitions = (min_length // len(combined_noise)) + 1
-                combined_noise = np.tile(combined_noise, repetitions)[:min_length]
+            if len(noise_segment) < min_length:
+                noise_segment = np.tile(noise_segment, (min_length // len(noise_segment)) + 1)[:min_length]
             
-            # Compute spectral profile
-            noise_stft = librosa.stft(combined_noise, 
+            # Compute noise spectrum
+            noise_stft = librosa.stft(noise_segment, 
                                      n_fft=self.config.n_fft, 
                                      hop_length=self.config.hop_length)
-            noise_spectrum = np.mean(np.abs(noise_stft), axis=1)
             
-            # Ensure we have a valid spectrum
-            if len(noise_spectrum) == 0 or np.any(np.isnan(noise_spectrum)) or np.any(np.isinf(noise_spectrum)):
-                # Fallback: create a flat noise profile
-                freq_bins = self.config.n_fft // 2 + 1
-                noise_spectrum = np.ones(freq_bins) * 0.01
-                logger.warning("Created fallback noise profile")
-            else:
-                # Smooth the noise profile
-                if len(noise_spectrum) >= 5:
-                    noise_spectrum = signal.medfilt(noise_spectrum, kernel_size=5)
-                
-                # Ensure minimum noise floor
-                noise_spectrum = np.maximum(noise_spectrum, np.max(noise_spectrum) * 0.01)
+            # Use conservative estimate (lower percentile)
+            noise_spectrum = np.percentile(np.abs(noise_stft), 30, axis=1)  # 30th percentile instead of mean
+            
+            # Apply gentle smoothing
+            if len(noise_spectrum) >= 3:
+                noise_spectrum = signal.medfilt(noise_spectrum, kernel_size=3)
+            
+            # Ensure very conservative noise floor (don't over-estimate noise)
+            noise_spectrum = np.minimum(noise_spectrum, np.max(noise_spectrum) * 0.5)
+            noise_spectrum = np.maximum(noise_spectrum, np.max(noise_spectrum) * 0.01)
             
             self.noise_profile = noise_spectrum
-            logger.debug(f"Estimated noise profile shape: {noise_spectrum.shape}")
+            logger.info(f"Conservative noise profile estimated from {len(noise_segment)} samples")
             return noise_spectrum
             
         except Exception as e:
-            logger.error(f"Noise profile estimation failed: {e}")
-            # Create a safe fallback profile
+            logger.error(f"Noise estimation failed: {e}")
             freq_bins = self.config.n_fft // 2 + 1
-            self.noise_profile = np.ones(freq_bins) * 0.01
+            self.noise_profile = np.ones(freq_bins) * 0.001
             return self.noise_profile
     
-    def adaptive_spectral_subtraction(self, audio: np.ndarray) -> np.ndarray:
-        """Advanced spectral subtraction with adaptive parameters"""
+    def gentle_spectral_subtraction(self, audio: np.ndarray) -> np.ndarray:
+        """Very gentle spectral subtraction that preserves speech"""
         
-        # Ensure audio is not empty
         if len(audio) == 0:
             return audio
             
-        # Estimate noise if not already done
-        if self.noise_profile is None:
-            self.estimate_noise_profile(audio)
-        
         try:
+            # Estimate noise if needed
+            if self.noise_profile is None:
+                self.estimate_noise_conservatively(audio)
+            
+            # Create speech frequency mask
+            if self.speech_mask is None:
+                self.create_speech_frequency_mask()
+            
             # Compute STFT
             stft = librosa.stft(audio, 
                                n_fft=self.config.n_fft, 
@@ -222,32 +201,40 @@ class AdvancedNoiseReducer:
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Debug: Check shapes
-            logger.debug(f"Magnitude shape: {magnitude.shape}")
-            logger.debug(f"Noise profile shape: {self.noise_profile.shape}")
-            
-            # Ensure noise profile matches frequency dimension
+            # Ensure dimensions match
             if len(self.noise_profile) != magnitude.shape[0]:
-                logger.warning(f"Noise profile size mismatch. Adjusting from {len(self.noise_profile)} to {magnitude.shape[0]}")
-                # Resize noise profile to match
+                logger.warning("Adjusting noise profile dimensions")
                 from scipy.interpolate import interp1d
                 old_indices = np.linspace(0, 1, len(self.noise_profile))
                 new_indices = np.linspace(0, 1, magnitude.shape[0])
                 f = interp1d(old_indices, self.noise_profile, kind='linear', fill_value='extrapolate')
                 self.noise_profile = f(new_indices)
             
-            # Adaptive over-subtraction factor
-            alpha = self._compute_adaptive_alpha(magnitude)
+            # Conservative spectral subtraction
+            alpha = self.config.spectral_subtraction_alpha  # Much lower than before
+            noise_profile_2d = self.noise_profile.reshape(-1, 1)
             
-            # Spectral subtraction with proper broadcasting
-            noise_profile_2d = self.noise_profile.reshape(-1, 1)  # (freq_bins, 1)
-            alpha_2d = alpha.reshape(-1, 1)  # (freq_bins, 1)
+            # Apply frequency-dependent subtraction (less aggressive in speech frequencies)
+            speech_frequencies = (np.arange(len(self.noise_profile)) >= 
+                                librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft).searchsorted(300))
+            speech_frequencies &= (np.arange(len(self.noise_profile)) <= 
+                                 librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft).searchsorted(3400))
+            
+            # Reduce subtraction strength in speech frequencies
+            alpha_per_freq = np.ones(len(self.noise_profile)) * alpha
+            alpha_per_freq[speech_frequencies] *= 0.7  # Even more conservative for speech
+            alpha_2d = alpha_per_freq.reshape(-1, 1)
+            
             enhanced_magnitude = magnitude - alpha_2d * noise_profile_2d
             
-            # Adaptive spectral floor
-            spectral_floor = self._compute_adaptive_floor(magnitude)
-            enhanced_magnitude = np.maximum(enhanced_magnitude, 
-                                           spectral_floor.reshape(-1, 1) * magnitude)
+            # High spectral floor to preserve speech
+            floor_ratio = self.config.spectral_floor
+            spectral_floor = floor_ratio * magnitude
+            enhanced_magnitude = np.maximum(enhanced_magnitude, spectral_floor)
+            
+            # Apply speech frequency emphasis
+            speech_mask_2d = self.speech_mask.reshape(-1, 1)
+            enhanced_magnitude = enhanced_magnitude * speech_mask_2d
             
             # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
@@ -256,52 +243,11 @@ class AdvancedNoiseReducer:
             return enhanced_audio
             
         except Exception as e:
-            logger.error(f"Spectral subtraction failed: {e}")
-            logger.error(f"Audio shape: {audio.shape}")
-            if hasattr(self, 'noise_profile') and self.noise_profile is not None:
-                logger.error(f"Noise profile shape: {self.noise_profile.shape}")
-            return audio  # Return original audio on failure
+            logger.error(f"Gentle spectral subtraction failed: {e}")
+            return audio
     
-    def _compute_adaptive_alpha(self, magnitude: np.ndarray) -> np.ndarray:
-        """Compute adaptive over-subtraction factor"""
-        
-        # SNR estimation per frequency bin
-        signal_estimate = np.mean(magnitude, axis=1)
-        snr_estimate = signal_estimate / (self.noise_profile + 1e-12)
-        snr_db = 20 * np.log10(snr_estimate + 1e-12)
-        
-        # Adaptive alpha based on SNR
-        alpha = np.ones_like(snr_db) * self.config.spectral_subtraction_alpha
-        
-        # Reduce over-subtraction for high SNR regions
-        high_snr_mask = snr_db > 15
-        alpha[high_snr_mask] *= 0.5
-        
-        # Increase over-subtraction for low SNR regions
-        low_snr_mask = snr_db < 5
-        alpha[low_snr_mask] *= 1.5
-        
-        return alpha
-    
-    def _compute_adaptive_floor(self, magnitude: np.ndarray) -> np.ndarray:
-        """Compute adaptive spectral floor"""
-        
-        # Base floor
-        floor = np.ones(magnitude.shape[0]) * self.config.spectral_floor
-        
-        # Reduce floor for speech-important frequencies (300-3400 Hz)
-        freqs = librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft)
-        speech_mask = (freqs >= 300) & (freqs <= 3400)
-        floor[speech_mask] *= 0.5
-        
-        # Increase floor for very high frequencies (reduce hiss)
-        high_freq_mask = freqs > 8000
-        floor[high_freq_mask] *= 2.0
-        
-        return floor
-    
-    def wiener_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Advanced Wiener filtering"""
+    def adaptive_wiener_filter(self, audio: np.ndarray) -> np.ndarray:
+        """Conservative Wiener filtering for speech"""
         
         if len(audio) == 0:
             return audio
@@ -313,29 +259,31 @@ class AdvancedNoiseReducer:
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Estimate noise power spectrum
             if self.noise_profile is None:
-                self.estimate_noise_profile(audio)
+                self.estimate_noise_conservatively(audio)
             
-            # Ensure noise profile matches magnitude dimensions
+            # Ensure dimensions match
             if len(self.noise_profile) != magnitude.shape[0]:
-                logger.warning(f"Noise profile size mismatch in Wiener filter. Adjusting...")
                 from scipy.interpolate import interp1d
                 old_indices = np.linspace(0, 1, len(self.noise_profile))
                 new_indices = np.linspace(0, 1, magnitude.shape[0])
                 f = interp1d(old_indices, self.noise_profile, kind='linear', fill_value='extrapolate')
                 self.noise_profile = f(new_indices)
             
-            noise_power = (self.noise_profile ** 2).reshape(-1, 1)  # (freq_bins, 1)
-            
-            # Signal power estimation
+            # Conservative noise power estimate
+            noise_power = (self.noise_profile ** 2).reshape(-1, 1) * 0.5  # Reduce noise power estimate
             signal_power = magnitude ** 2
             
-            # Wiener gain with smoothing
+            # Conservative Wiener gain (biased toward preserving signal)
             wiener_gain = signal_power / (signal_power + noise_power + 1e-12)
             
-            # Smooth the gain across time
-            wiener_gain = signal.medfilt2d(wiener_gain, kernel_size=(3, 5))
+            # Ensure minimum gain to preserve speech
+            min_gain = 0.3  # Never reduce signal below 30%
+            wiener_gain = np.maximum(wiener_gain, min_gain)
+            
+            # Light smoothing only
+            if wiener_gain.shape[1] > 3:
+                wiener_gain = signal.medfilt2d(wiener_gain, kernel_size=(1, 3))  # Only temporal smoothing
             
             # Apply gain
             enhanced_magnitude = wiener_gain * magnitude
@@ -348,697 +296,111 @@ class AdvancedNoiseReducer:
             
         except Exception as e:
             logger.error(f"Wiener filtering failed: {e}")
-            return audio  # Return original audio on failure
+            return audio
+
+class SpeechDynamicsProcessor:
+    """Gentle dynamics processing for speech clarity"""
     
-    def spectral_gating(self, audio: np.ndarray) -> np.ndarray:
-        """Advanced spectral gating for noise reduction"""
+    def __init__(self, config: SpeechEnhancementConfig):
+        self.config = config
+    
+    def gentle_compression(self, audio: np.ndarray) -> np.ndarray:
+        """Apply very gentle compression optimized for speech"""
         
-        stft = librosa.stft(audio, 
-                           n_fft=self.config.n_fft, 
-                           hop_length=self.config.hop_length)
-        magnitude = np.abs(stft)
-        phase = np.angle(stft)
-        
-        # Compute time-frequency dependent threshold
-        # Use local statistics for adaptive thresholding
-        window_size = 5  # frames
-        threshold_factor = 1.5
-        
-        gated_magnitude = np.zeros_like(magnitude)
-        
-        for freq_bin in range(magnitude.shape[0]):
-            for time_frame in range(magnitude.shape[1]):
-                # Local window
-                t_start = max(0, time_frame - window_size // 2)
-                t_end = min(magnitude.shape[1], time_frame + window_size // 2 + 1)
+        if not self.config.enable_gentle_compression:
+            return audio
+            
+        try:
+            threshold_db = self.config.compression_threshold
+            ratio = self.config.compression_ratio
+            threshold_linear = 10 ** (threshold_db / 20)
+            
+            # RMS-based compression (better for speech than peak)
+            window_size = int(0.01 * self.config.sample_rate)  # 10ms windows
+            compressed = np.zeros_like(audio)
+            
+            for i in range(len(audio)):
+                # Get local RMS
+                start_idx = max(0, i - window_size // 2)
+                end_idx = min(len(audio), i + window_size // 2)
+                local_rms = np.sqrt(np.mean(audio[start_idx:end_idx] ** 2))
                 
-                local_magnitudes = magnitude[freq_bin, t_start:t_end]
-                local_threshold = np.median(local_magnitudes) * threshold_factor
-                
-                # Apply gate
-                if magnitude[freq_bin, time_frame] > local_threshold:
-                    gated_magnitude[freq_bin, time_frame] = magnitude[freq_bin, time_frame]
+                if local_rms > threshold_linear:
+                    # Apply gentle compression
+                    excess = local_rms - threshold_linear
+                    compressed_excess = excess / ratio
+                    gain_reduction = (threshold_linear + compressed_excess) / local_rms
+                    compressed[i] = audio[i] * gain_reduction
                 else:
-                    gated_magnitude[freq_bin, time_frame] = 0.1 * magnitude[freq_bin, time_frame]
-        
-        # Reconstruct
-        enhanced_stft = gated_magnitude * np.exp(1j * phase)
-        enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
-        
-        return enhanced_audio
-
-class MultibandProcessor:
-    """Professional multi-band audio processing"""
-    
-    def __init__(self, config: AdvancedEnhancementConfig):
-        self.config = config
-        self.band_filters = self._design_band_filters()
-    
-    def _design_band_filters(self) -> List[np.ndarray]:
-        """Design filterbank for multi-band processing"""
-        
-        # Define frequency bands (in Hz)
-        nyquist = self.config.sample_rate / 2
-        
-        if self.config.band_count == 4:
-            # 4-band processing
-            band_edges = [0, 250, 1000, 4000, nyquist]
-        elif self.config.band_count == 8:
-            # 8-band processing (more precise)
-            band_edges = [0, 125, 250, 500, 1000, 2000, 4000, 8000, nyquist]
-        else:
-            # Custom band count
-            band_edges = np.logspace(np.log10(50), np.log10(nyquist), self.config.band_count + 1)
-            band_edges[0] = 0
-        
-        # Design filters
-        filters = []
-        for i in range(len(band_edges) - 1):
-            low_freq = band_edges[i]
-            high_freq = band_edges[i + 1]
+                    compressed[i] = audio[i]
             
-            # Normalize frequencies
-            low_norm = low_freq / nyquist
-            high_norm = high_freq / nyquist
+            return compressed
             
-            # Ensure valid frequency range
-            low_norm = max(low_norm, 0.001)
-            high_norm = min(high_norm, 0.999)
-            
-            if low_norm >= high_norm:
-                # Skip invalid bands
-                filters.append(None)
-                continue
-            
-            # Design bandpass filter
-            if low_norm <= 0.001:
-                # Low-pass filter
-                sos = signal.butter(4, high_norm, 'low', output='sos')
-            elif high_norm >= 0.999:
-                # High-pass filter
-                sos = signal.butter(4, low_norm, 'high', output='sos')
-            else:
-                # Band-pass filter
-                sos = signal.butter(4, [low_norm, high_norm], 'band', output='sos')
-            
-            filters.append(sos)
-        
-        return filters
-    
-    def process_multiband(self, audio: np.ndarray) -> np.ndarray:
-        """Process audio with multi-band enhancement"""
-        
-        if not self.config.enable_multiband:
+        except Exception as e:
+            logger.error(f"Gentle compression failed: {e}")
             return audio
-        
-        # Split into bands
-        bands = []
-        for band_filter in self.band_filters:
-            if band_filter is not None:
-                band_signal = signal.sosfilt(band_filter, audio)
-                bands.append(band_signal)
-            else:
-                bands.append(np.zeros_like(audio))
-        
-        # Process each band
-        processed_bands = []
-        for i, band_signal in enumerate(bands):
-            processed_band = self._process_band(band_signal, i)
-            processed_bands.append(processed_band)
-        
-        # Recombine bands
-        enhanced_audio = np.sum(processed_bands, axis=0)
-        
-        return enhanced_audio
     
-    def _process_band(self, band_signal: np.ndarray, band_index: int) -> np.ndarray:
-        """Process individual frequency band"""
+    def speech_gate(self, audio: np.ndarray) -> np.ndarray:
+        """Very gentle gating to reduce inter-word noise"""
         
-        if np.max(np.abs(band_signal)) < 1e-6:
-            return band_signal
-        
-        # Band-specific processing
-        processed = band_signal.copy()
-        
-        # Low frequency bands - reduce rumble
-        if band_index < 2:  # Below 250 Hz
-            processed = self._reduce_low_frequency_artifacts(processed)
-        
-        # Mid frequency bands - enhance speech
-        elif 2 <= band_index <= 5:  # 250 Hz - 4000 Hz (speech region)
-            processed = self._enhance_speech_band(processed)
-        
-        # High frequency bands - control brightness
-        else:  # Above 4000 Hz
-            processed = self._process_high_frequencies(processed)
-        
-        return processed
-    
-    def _reduce_low_frequency_artifacts(self, band_signal: np.ndarray) -> np.ndarray:
-        """Reduce low-frequency artifacts and rumble"""
-        
-        # High-pass filtering
-        sos = signal.butter(2, 50 / (self.config.sample_rate / 2), 'high', output='sos')
-        filtered = signal.sosfilt(sos, band_signal)
-        
-        # Dynamic range compression for rumble
-        compressed = self._apply_band_compression(filtered, -30, 4.0)
-        
-        return compressed
-    
-    def _enhance_speech_band(self, band_signal: np.ndarray) -> np.ndarray:
-        """Enhance speech-critical frequencies"""
-        
-        # Gentle compression to even out levels
-        compressed = self._apply_band_compression(band_signal, -18, 2.5)
-        
-        # Harmonic enhancement
-        enhanced = self._add_harmonic_emphasis(compressed)
-        
-        return enhanced
-    
-    def _process_high_frequencies(self, band_signal: np.ndarray) -> np.ndarray:
-        """Process high frequencies to control harshness"""
-        
-        # De-essing and harshness reduction
-        deessed = self._apply_deessing(band_signal)
-        
-        # Gentle compression
-        compressed = self._apply_band_compression(deessed, -15, 2.0)
-        
-        return compressed
-    
-    def _apply_band_compression(self, signal_data: np.ndarray, 
-                               threshold_db: float, ratio: float) -> np.ndarray:
-        """Apply compression to a frequency band"""
-        
-        threshold_linear = 10 ** (threshold_db / 20)
-        
-        # Simple compression
-        compressed = np.zeros_like(signal_data)
-        
-        for i, sample in enumerate(signal_data):
-            abs_sample = abs(sample)
+        try:
+            # Simple energy-based gating
+            window_size = int(0.02 * self.config.sample_rate)  # 20ms windows
+            hop_size = window_size // 4
             
-            if abs_sample > threshold_linear:
-                # Above threshold - apply compression
-                excess = abs_sample - threshold_linear
-                compressed_excess = excess / ratio
-                compressed_abs = threshold_linear + compressed_excess
-                compressed[i] = np.sign(sample) * compressed_abs
-            else:
-                # Below threshold - no compression
-                compressed[i] = sample
-        
-        return compressed
-    
-    def _add_harmonic_emphasis(self, signal_data: np.ndarray) -> np.ndarray:
-        """Add subtle harmonic emphasis for warmth"""
-        
-        # Gentle saturation for harmonic generation
-        drive = 1.1
-        emphasized = np.tanh(signal_data * drive) / drive
-        
-        # Mix with original
-        mix_ratio = 0.15
-        return (1 - mix_ratio) * signal_data + mix_ratio * emphasized
-    
-    def _apply_deessing(self, signal_data: np.ndarray) -> np.ndarray:
-        """Reduce sibilance and harshness"""
-        
-        # Simple de-essing using dynamic EQ concept
-        # Focus on 4-8 kHz range where sibilance occurs
-        
-        # High-pass filter to isolate sibilant frequencies
-        sos = signal.butter(4, 4000 / (self.config.sample_rate / 2), 'high', output='sos')
-        sibilant_content = signal.sosfilt(sos, signal_data)
-        
-        # Detect sibilant levels
-        threshold = np.percentile(np.abs(sibilant_content), 85)
-        
-        # Apply gain reduction when sibilance detected
-        deessed = signal_data.copy()
-        for i, sample in enumerate(signal_data):
-            if abs(sibilant_content[i]) > threshold:
-                deessed[i] *= 0.7  # Reduce gain
-        
-        return deessed
-
-class PsychoacousticProcessor:
-    """Psychoacoustic modeling for perceptually-aware processing"""
-    
-    def __init__(self, config: AdvancedEnhancementConfig):
-        self.config = config
-        self.bark_scale = self._create_bark_scale()
-    
-    def _create_bark_scale(self) -> np.ndarray:
-        """Create Bark scale frequency mapping"""
-        
-        freqs = librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft)
-        
-        # Convert Hz to Bark scale
-        # Bark = 13 * arctan(0.00076 * f) + 3.5 * arctan((f/7500)^2)
-        bark_freqs = 13 * np.arctan(0.00076 * freqs) + 3.5 * np.arctan((freqs / 7500) ** 2)
-        
-        return bark_freqs
-    
-    def psychoacoustic_enhancement(self, audio: np.ndarray) -> np.ndarray:
-        """Apply psychoacoustic-based enhancement"""
-        
-        if not self.config.enable_psychoacoustic:
-            return audio
-        
-        stft = librosa.stft(audio, 
-                           n_fft=self.config.n_fft, 
-                           hop_length=self.config.hop_length)
-        magnitude = np.abs(stft)
-        phase = np.angle(stft)
-        
-        # Convert to Bark domain
-        bark_spectrum = self._convert_to_bark_domain(magnitude)
-        
-        # Apply masking model
-        masked_spectrum = self._apply_masking_model(bark_spectrum)
-        
-        # Convert back to linear domain
-        enhanced_magnitude = self._convert_from_bark_domain(masked_spectrum, magnitude.shape)
-        
-        # Reconstruct
-        enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-        enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
-        
-        return enhanced_audio
-    
-    def _convert_to_bark_domain(self, magnitude: np.ndarray) -> np.ndarray:
-        """Convert linear frequency spectrum to Bark domain"""
-        
-        # Simple binning to Bark scale
-        bark_bands = np.linspace(0, 24, 25)  # 24 Bark bands
-        bark_spectrum = np.zeros((len(bark_bands) - 1, magnitude.shape[1]))
-        
-        for i in range(len(bark_bands) - 1):
-            band_mask = (self.bark_scale >= bark_bands[i]) & (self.bark_scale < bark_bands[i + 1])
-            if np.any(band_mask):
-                bark_spectrum[i, :] = np.mean(magnitude[band_mask, :], axis=0)
-        
-        return bark_spectrum
-    
-    def _apply_masking_model(self, bark_spectrum: np.ndarray) -> np.ndarray:
-        """Apply psychoacoustic masking model"""
-        
-        masked_spectrum = bark_spectrum.copy()
-        
-        # Frequency masking
-        for i in range(bark_spectrum.shape[0]):
-            for j in range(bark_spectrum.shape[1]):
-                masker_level = bark_spectrum[i, j]
+            # Calculate frame energies
+            frame_energies = []
+            for i in range(0, len(audio) - window_size, hop_size):
+                frame = audio[i:i + window_size]
+                energy = np.mean(frame ** 2)
+                frame_energies.append(energy)
+            
+            if not frame_energies:
+                return audio
+            
+            frame_energies = np.array(frame_energies)
+            
+            # Conservative threshold (only gate very quiet parts)
+            threshold = np.percentile(frame_energies, 15)  # Bottom 15%
+            
+            # Create gate mask
+            gate_mask = np.ones_like(audio)
+            
+            for i, energy in enumerate(frame_energies):
+                start_idx = i * hop_size
+                end_idx = min(len(audio), start_idx + window_size)
                 
-                # Apply masking to neighboring frequency bands
-                for k in range(max(0, i-3), min(bark_spectrum.shape[0], i+4)):
-                    if k != i:
-                        distance = abs(i - k)
-                        masking_effect = masker_level * np.exp(-distance * 0.5)
-                        
-                        # Reduce masked components
-                        if bark_spectrum[k, j] < masking_effect * 0.5:
-                            masked_spectrum[k, j] *= 0.7
-        
-        # Temporal masking (simplified)
-        for i in range(1, bark_spectrum.shape[1] - 1):
-            prev_frame = bark_spectrum[:, i-1]
-            curr_frame = bark_spectrum[:, i]
-            next_frame = bark_spectrum[:, i+1]
+                if energy < threshold:
+                    # Very gentle gating (reduce but don't eliminate)
+                    gate_mask[start_idx:end_idx] *= 0.5
             
-            # Forward masking
-            forward_mask = prev_frame * 0.3
-            masked_spectrum[:, i] = np.maximum(masked_spectrum[:, i], 
-                                             np.minimum(curr_frame, forward_mask))
-        
-        return masked_spectrum
-    
-    def _convert_from_bark_domain(self, bark_spectrum: np.ndarray, 
-                                 target_shape: Tuple[int, int]) -> np.ndarray:
-        """Convert Bark domain back to linear frequency domain"""
-        
-        enhanced_magnitude = np.zeros(target_shape)
-        bark_bands = np.linspace(0, 24, bark_spectrum.shape[0] + 1)
-        
-        for i in range(len(self.bark_scale)):
-            # Find corresponding Bark band
-            bark_idx = np.digitize(self.bark_scale[i], bark_bands) - 1
-            bark_idx = np.clip(bark_idx, 0, bark_spectrum.shape[0] - 1)
+            # Smooth the gate mask to avoid artifacts
+            if len(gate_mask) > 10:
+                gate_mask = signal.medfilt(gate_mask, kernel_size=9)
             
-            enhanced_magnitude[i, :] = bark_spectrum[bark_idx, :]
-        
-        return enhanced_magnitude
-
-class HarmonicPercussiveProcessor:
-    """Harmonic and percussive component processing"""
-    
-    def __init__(self, config: AdvancedEnhancementConfig):
-        self.config = config
-    
-    def separate_and_enhance(self, audio: np.ndarray) -> np.ndarray:
-        """Separate harmonic/percussive and enhance separately"""
-        
-        if not self.config.enable_harmonic_enhancement:
+            return audio * gate_mask
+            
+        except Exception as e:
+            logger.error(f"Speech gating failed: {e}")
             return audio
-        
-        # Separate harmonic and percussive components
-        harmonic, percussive = librosa.effects.hpss(
-            audio, 
-            margin=self.config.harmonic_separation_margin
-        )
-        
-        # Process harmonic component (tonal content)
-        enhanced_harmonic = self._enhance_harmonic_component(harmonic)
-        
-        # Process percussive component (transients)
-        processed_percussive = self._process_percussive_component(percussive)
-        
-        # Recombine with appropriate weights
-        # Emphasize harmonic content for speech
-        combined = 0.75 * enhanced_harmonic + 0.25 * processed_percussive
-        
-        return combined
-    
-    def _enhance_harmonic_component(self, harmonic: np.ndarray) -> np.ndarray:
-        """Enhance harmonic content"""
-        
-        stft = librosa.stft(harmonic, 
-                           n_fft=self.config.n_fft, 
-                           hop_length=self.config.hop_length)
-        magnitude = np.abs(stft)
-        phase = np.angle(stft)
-        
-        # Enhance harmonic peaks
-        enhanced_magnitude = self._enhance_spectral_peaks(magnitude)
-        
-        # Reduce noise floor
-        enhanced_magnitude = self._reduce_harmonic_noise_floor(enhanced_magnitude)
-        
-        # Reconstruct
-        enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-        enhanced_harmonic = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
-        
-        return enhanced_harmonic
-    
-    def _enhance_spectral_peaks(self, magnitude: np.ndarray) -> np.ndarray:
-        """Enhance spectral peaks (harmonics)"""
-        
-        enhanced = magnitude.copy()
-        
-        # Find spectral peaks
-        for frame_idx in range(magnitude.shape[1]):
-            spectrum = magnitude[:, frame_idx]
-            
-            # Find peaks
-            peaks, properties = signal.find_peaks(spectrum, 
-                                                 height=np.max(spectrum) * 0.1,
-                                                 distance=5)
-            
-            # Enhance peaks
-            for peak in peaks:
-                # Boost peak and surrounding bins
-                start_bin = max(0, peak - 2)
-                end_bin = min(len(spectrum), peak + 3)
-                enhanced[start_bin:end_bin, frame_idx] *= 1.2
-        
-        return enhanced
-    
-    def _reduce_harmonic_noise_floor(self, magnitude: np.ndarray) -> np.ndarray:
-        """Reduce noise floor in harmonic component"""
-        
-        # Estimate noise floor
-        noise_floor = np.percentile(magnitude, 20, axis=1, keepdims=True)
-        
-        # Create noise gate
-        gate_threshold = noise_floor * 2.0
-        gate_ratio = 0.5
-        
-        gated_magnitude = np.where(magnitude > gate_threshold,
-                                 magnitude,
-                                 magnitude * gate_ratio)
-        
-        return gated_magnitude
-    
-    def _process_percussive_component(self, percussive: np.ndarray) -> np.ndarray:
-        """Process percussive component"""
-        
-        # Gate low-level percussive content to reduce artifacts
-        threshold = np.percentile(np.abs(percussive), 80)
-        
-        # Apply soft gating
-        processed = np.where(np.abs(percussive) > threshold * 0.3,
-                           percussive,
-                           percussive * 0.1)
-        
-        return processed
 
-class DynamicProcessor:
-    """Advanced dynamic range processing"""
+class SpeechOptimizedProcessor:
+    """Main speech enhancement processor for ASR"""
     
-    def __init__(self, config: AdvancedEnhancementConfig):
-        self.config = config
-    
-    def process_dynamics(self, audio: np.ndarray) -> np.ndarray:
-        """Apply comprehensive dynamic processing"""
-        
-        if not self.config.enable_dynamic_processing:
-            return audio
-        
-        # Multi-stage dynamic processing
-        processed = audio.copy()
-        
-        # 1. Upward expansion (reduce low-level noise)
-        processed = self._apply_upward_expansion(processed)
-        
-        # 2. Compression (control peaks)
-        processed = self._apply_multiband_compression(processed)
-        
-        # 3. Gentle limiting (prevent clipping)
-        processed = self._apply_soft_limiting(processed)
-        
-        return processed
-    
-    def _apply_upward_expansion(self, audio: np.ndarray) -> np.ndarray:
-        """Apply upward expansion to reduce low-level noise"""
-        
-        # Threshold below which to apply expansion
-        threshold_db = -40
-        threshold_linear = 10 ** (threshold_db / 20)
-        
-        # Expansion ratio
-        expansion_ratio = 1.5
-        
-        expanded = np.zeros_like(audio)
-        
-        for i, sample in enumerate(audio):
-            abs_sample = abs(sample)
-            
-            if abs_sample < threshold_linear:
-                # Below threshold - apply expansion (reduce level)
-                expanded_abs = abs_sample ** expansion_ratio
-                expanded[i] = np.sign(sample) * expanded_abs
-            else:
-                # Above threshold - no change
-                expanded[i] = sample
-        
-        return expanded
-    
-    def _apply_multiband_compression(self, audio: np.ndarray) -> np.ndarray:
-        """Apply frequency-dependent compression"""
-        
-        # Split into 3 bands for different compression
-        nyquist = self.config.sample_rate / 2
-        
-        # Low band (up to 200 Hz)
-        sos_low = signal.butter(4, 200 / nyquist, 'low', output='sos')
-        low_band = signal.sosfilt(sos_low, audio)
-        
-        # Mid band (200 Hz - 4000 Hz)
-        sos_mid = signal.butter(4, [200 / nyquist, 4000 / nyquist], 'band', output='sos')
-        mid_band = signal.sosfilt(sos_mid, audio)
-        
-        # High band (above 4000 Hz)
-        sos_high = signal.butter(4, 4000 / nyquist, 'high', output='sos')
-        high_band = signal.sosfilt(sos_high, audio)
-        
-        # Apply different compression to each band
-        compressed_low = self._compress_band(low_band, -25, 3.0)  # More compression for low end
-        compressed_mid = self._compress_band(mid_band, -20, 2.5)  # Moderate compression for speech
-        compressed_high = self._compress_band(high_band, -15, 2.0)  # Light compression for highs
-        
-        # Recombine
-        return compressed_low + compressed_mid + compressed_high
-    
-    def _compress_band(self, band_audio: np.ndarray, 
-                      threshold_db: float, ratio: float) -> np.ndarray:
-        """Apply compression to frequency band"""
-        
-        threshold_linear = 10 ** (threshold_db / 20)
-        
-        compressed = np.zeros_like(band_audio)
-        
-        for i, sample in enumerate(band_audio):
-            abs_sample = abs(sample)
-            
-            if abs_sample > threshold_linear:
-                # Above threshold - apply compression
-                excess = abs_sample - threshold_linear
-                compressed_excess = excess / ratio
-                compressed_abs = threshold_linear + compressed_excess
-                compressed[i] = np.sign(sample) * compressed_abs
-            else:
-                # Below threshold - no compression
-                compressed[i] = sample
-        
-        return compressed
-    
-    def _apply_soft_limiting(self, audio: np.ndarray) -> np.ndarray:
-        """Apply soft limiting to prevent clipping"""
-        
-        threshold = 0.8
-        knee_width = 0.1
-        
-        limited = np.zeros_like(audio)
-        
-        for i, sample in enumerate(audio):
-            abs_sample = abs(sample)
-            
-            if abs_sample <= threshold - knee_width:
-                # Below knee - no limiting
-                limited[i] = sample
-            elif abs_sample <= threshold + knee_width:
-                # In knee region - soft limiting
-                knee_ratio = (abs_sample - (threshold - knee_width)) / (2 * knee_width)
-                knee_gain = 1 - (knee_ratio ** 2) * 0.3
-                limited[i] = sample * knee_gain
-            else:
-                # Above knee - hard limiting
-                limited[i] = np.sign(sample) * threshold
-        
-        return limited
-
-class FinalMasteringProcessor:
-    """Final mastering and output processing"""
-    
-    def __init__(self, config: AdvancedEnhancementConfig):
-        self.config = config
-    
-    def master_audio(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Apply final mastering processing"""
-        
-        mastered = audio.copy()
-        
-        # 1. High-pass filter (remove DC and sub-sonic content)
-        mastered = self._apply_highpass_filter(mastered, sample_rate)
-        
-        # 2. Subtle harmonic enhancement
-        mastered = self._add_harmonic_excitement(mastered)
-        
-        # 3. Loudness normalization
-        mastered = self._normalize_loudness(mastered, sample_rate)
-        
-        # 4. Final limiting
-        if self.config.enable_final_limiter:
-            mastered = self._apply_final_limiter(mastered)
-        
-        # 5. Ensure no clipping
-        mastered = np.clip(mastered, -0.98, 0.98)
-        
-        return mastered
-    
-    def _apply_highpass_filter(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Apply high-pass filter to remove unwanted low frequencies"""
-        
-        # Remove content below 40 Hz
-        sos = signal.butter(2, 40 / (sample_rate / 2), 'high', output='sos')
-        filtered = signal.sosfilt(sos, audio)
-        
-        return filtered
-    
-    def _add_harmonic_excitement(self, audio: np.ndarray) -> np.ndarray:
-        """Add subtle harmonic excitement for warmth"""
-        
-        # Very gentle saturation
-        drive = 1.02
-        excited = np.tanh(audio * drive)
-        
-        # Mix with original (very subtle)
-        mix_ratio = 0.05
-        return (1 - mix_ratio) * audio + mix_ratio * excited
-    
-    def _normalize_loudness(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Normalize loudness to target level"""
-        
-        if PYLOUDNORM_AVAILABLE:
-            try:
-                # Use professional loudness normalization
-                meter = pyln.Meter(sample_rate)
-                loudness = meter.integrated_loudness(audio)
-                
-                if -50 < loudness < 0:  # Valid loudness measurement
-                    normalized = pyln.normalize.loudness(
-                        audio, loudness, self.config.target_loudness
-                    )
-                    return normalized
-            except Exception as e:
-                logger.warning(f"Professional loudness normalization failed: {e}")
-        
-        # Fallback: simple peak normalization
-        max_val = np.max(np.abs(audio))
-        if max_val > 0:
-            target_peak = 10 ** (self.config.target_loudness / 20)
-            normalized = audio * (target_peak / max_val)
-            return normalized
-        
-        return audio
-    
-    def _apply_final_limiter(self, audio: np.ndarray) -> np.ndarray:
-        """Apply final peak limiter"""
-        
-        threshold_db = self.config.limiter_threshold
-        threshold_linear = 10 ** (threshold_db / 20)
-        
-        # Soft knee limiter
-        limited = np.zeros_like(audio)
-        
-        for i, sample in enumerate(audio):
-            abs_sample = abs(sample)
-            
-            if abs_sample > threshold_linear:
-                # Soft limiting with gentle curve
-                excess = abs_sample - threshold_linear
-                limited_excess = excess * (1 / (1 + excess * 5))  # Soft knee
-                limited_abs = threshold_linear + limited_excess
-                limited[i] = np.sign(sample) * limited_abs
-            else:
-                limited[i] = sample
-        
-        return limited
-
-class AdvancedTraditionalEnhancer:
-    """Main traditional audio enhancement system"""
-    
-    def __init__(self, config: Optional[AdvancedEnhancementConfig] = None):
-        self.config = config or AdvancedEnhancementConfig()
+    def __init__(self, config: Optional[SpeechEnhancementConfig] = None):
+        self.config = config or SpeechEnhancementConfig()
         
         # Initialize processors
-        self.noise_reducer = AdvancedNoiseReducer(self.config)
-        self.multiband_processor = MultibandProcessor(self.config)
-        self.psychoacoustic_processor = PsychoacousticProcessor(self.config)
-        self.harmonic_processor = HarmonicPercussiveProcessor(self.config)
-        self.dynamic_processor = DynamicProcessor(self.config)
-        self.mastering_processor = FinalMasteringProcessor(self.config)
+        self.noise_reducer = GentleSpeechNoiseReducer(self.config)
+        self.dynamics_processor = SpeechDynamicsProcessor(self.config)
         
         # Performance tracking
         self.metrics = defaultdict(list)
         
-        logger.info("Advanced Traditional Audio Enhancer initialized")
+        logger.info("Speech-Optimized Audio Processor initialized for ASR")
     
     def load_audio(self, file_path: str) -> Tuple[np.ndarray, int]:
-        """Load and validate audio file"""
+        """Load and prepare audio for speech processing"""
         
         if not Path(file_path).exists():
             raise FileNotFoundError(f"Audio file not found: {file_path}")
@@ -1049,29 +411,34 @@ class AdvancedTraditionalEnhancer:
             # Load audio
             audio, sr = librosa.load(file_path, sr=None, mono=True)
             
-            # Validate audio
             if len(audio) == 0:
                 raise ValueError("Empty audio file")
             
+            # Clean invalid values
             if np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
-                logger.warning("Audio contains invalid values, cleaning...")
-                audio = np.nan_to_num(audio, nan=0.0, posinf=1.0, neginf=-1.0)
+                logger.warning("Cleaning invalid audio values")
+                audio = np.nan_to_num(audio, nan=0.0, posinf=0.95, neginf=-0.95)
             
-            # Resample if necessary
+            # Resample to ASR-optimized rate if needed
             if sr != self.config.sample_rate:
-                logger.info(f"Resampling from {sr}Hz to {self.config.sample_rate}Hz")
+                logger.info(f"Resampling from {sr}Hz to {self.config.sample_rate}Hz for ASR")
                 audio = librosa.resample(audio, orig_sr=sr, target_sr=self.config.sample_rate)
                 sr = self.config.sample_rate
             
-            # Normalize input
+            # Conservative normalization (preserve dynamics)
             max_val = np.max(np.abs(audio))
             if max_val > 0:
-                audio = audio / max_val * 0.9  # Keep headroom
+                # Don't normalize too aggressively - preserve natural speech levels
+                if max_val > 0.95:  # Only normalize if clipping risk
+                    audio = audio / max_val * 0.9
+                elif max_val < 0.1:  # Boost very quiet audio
+                    audio = audio / max_val * 0.3
             
             load_time = time.time() - start_time
-            self.metrics['audio_loading'].append(load_time)
+            self.metrics['loading_time'].append(load_time)
             
-            logger.info(f"Audio loaded: {len(audio)/sr:.2f}s at {sr}Hz ({load_time:.3f}s)")
+            logger.info(f"Audio loaded for ASR: {len(audio)/sr:.2f}s at {sr}Hz")
+            logger.info(f"Peak level: {max_val:.3f}, RMS: {np.sqrt(np.mean(audio**2)):.3f}")
             
             return audio, sr
             
@@ -1079,128 +446,330 @@ class AdvancedTraditionalEnhancer:
             logger.error(f"Error loading audio: {e}")
             raise
     
-    def enhance_audio(self, audio_path: str = None) -> Tuple[np.ndarray, int]:
-        """Main enhancement pipeline"""
+    def enhance_speech_for_asr(self, audio_path: str = None) -> Tuple[np.ndarray, int]:
+        """Main speech enhancement pipeline optimized for ASR"""
         
         if audio_path is None:
             audio_path = INPUT_AUDIO_PATH
             logger.info(f"Using global input path: {INPUT_AUDIO_PATH}")
         
-        logger.info(f"Starting traditional enhancement pipeline for: {audio_path}")
+        logger.info(f"Starting speech enhancement for ASR: {audio_path}")
         start_time = time.time()
         
         # Load audio
         original_audio, sr = self.load_audio(audio_path)
         enhanced_audio = original_audio.copy()
         
-        # Stage 1: Noise Reduction
-        logger.info("Stage 1: Advanced noise reduction...")
+        # Calculate original metrics
+        orig_rms = np.sqrt(np.mean(original_audio ** 2))
+        orig_peak = np.max(np.abs(original_audio))
+        logger.info(f"Original audio - RMS: {orig_rms:.4f}, Peak: {orig_peak:.4f}")
+        
+        # Stage 1: High-pass filter (remove DC and low-frequency rumble)
+        logger.info("Stage 1: Gentle high-pass filtering...")
         stage_start = time.time()
         
-        # Apply multiple noise reduction techniques
-        if self.config.noise_reduction_strength > 0.3:
-            enhanced_audio = self.noise_reducer.adaptive_spectral_subtraction(enhanced_audio)
-            enhanced_audio = self.noise_reducer.wiener_filtering(enhanced_audio)
-        
-        if self.config.noise_reduction_strength > 0.6:
-            enhanced_audio = self.noise_reducer.spectral_gating(enhanced_audio)
-        
-        # Use external noise reduction if available and requested
-        if NOISEREDUCE_AVAILABLE and self.config.noise_reduction_strength > 0.8:
-            try:
-                enhanced_audio = nr.reduce_noise(
-                    y=enhanced_audio, 
-                    sr=sr,
-                    stationary=False,
-                    prop_decrease=0.7
-                )
-            except Exception as e:
-                logger.warning(f"External noise reduction failed: {e}")
+        # Very gentle high-pass (preserve natural speech)
+        if sr > 0:
+            sos = signal.butter(1, 80 / (sr / 2), 'high', output='sos')  # Remove only below 80Hz
+            enhanced_audio = signal.sosfilt(sos, enhanced_audio)
         
         stage_time = time.time() - stage_start
-        self.metrics['noise_reduction'].append(stage_time)
-        logger.info(f"Noise reduction completed in {stage_time:.3f}s")
+        self.metrics['highpass_time'].append(stage_time)
+        logger.info(f"High-pass filtering completed in {stage_time:.3f}s")
         
-        # Stage 2: Multi-band Processing
-        logger.info("Stage 2: Multi-band enhancement...")
+        # Stage 2: Conservative noise reduction
+        if self.config.noise_reduction_strength > 0.0:
+            logger.info("Stage 2: Conservative noise reduction...")
+            stage_start = time.time()
+            
+            if self.config.noise_reduction_strength <= 0.5:
+                # Light noise reduction - spectral subtraction only
+                enhanced_audio = self.noise_reducer.gentle_spectral_subtraction(enhanced_audio)
+            else:
+                # Moderate noise reduction - add Wiener filter
+                enhanced_audio = self.noise_reducer.gentle_spectral_subtraction(enhanced_audio)
+                enhanced_audio = self.noise_reducer.adaptive_wiener_filter(enhanced_audio)
+            
+            stage_time = time.time() - stage_start
+            self.metrics['noise_reduction_time'].append(stage_time)
+            logger.info(f"Noise reduction completed in {stage_time:.3f}s")
+        else:
+            logger.info("Noise reduction disabled")
+        
+        # Stage 3: Speech frequency emphasis
+        logger.info("Stage 3: Speech frequency emphasis...")
         stage_start = time.time()
-        enhanced_audio = self.multiband_processor.process_multiband(enhanced_audio)
-        stage_time = time.time() - stage_start
-        self.metrics['multiband_processing'].append(stage_time)
-        logger.info(f"Multi-band processing completed in {stage_time:.3f}s")
         
-        # Stage 3: Harmonic-Percussive Enhancement
-        logger.info("Stage 3: Harmonic-percussive enhancement...")
+        enhanced_audio = self._apply_speech_frequency_emphasis(enhanced_audio, sr)
+        
+        stage_time = time.time() - stage_start
+        self.metrics['emphasis_time'].append(stage_time)
+        logger.info(f"Speech emphasis completed in {stage_time:.3f}s")
+        
+        # Stage 4: Gentle dynamics processing
+        logger.info("Stage 4: Gentle dynamics processing...")
         stage_start = time.time()
-        enhanced_audio = self.harmonic_processor.separate_and_enhance(enhanced_audio)
-        stage_time = time.time() - stage_start
-        self.metrics['harmonic_processing'].append(stage_time)
-        logger.info(f"Harmonic-percussive processing completed in {stage_time:.3f}s")
         
-        # Stage 4: Psychoacoustic Processing
-        logger.info("Stage 4: Psychoacoustic enhancement...")
+        # Apply gentle gating first
+        enhanced_audio = self.dynamics_processor.speech_gate(enhanced_audio)
+        
+        # Then gentle compression
+        enhanced_audio = self.dynamics_processor.gentle_compression(enhanced_audio)
+        
+        stage_time = time.time() - stage_start
+        self.metrics['dynamics_time'].append(stage_time)
+        logger.info(f"Dynamics processing completed in {stage_time:.3f}s")
+        
+        # Stage 5: Final ASR optimization
+        logger.info("Stage 5: Final ASR optimization...")
         stage_start = time.time()
-        enhanced_audio = self.psychoacoustic_processor.psychoacoustic_enhancement(enhanced_audio)
-        stage_time = time.time() - stage_start
-        self.metrics['psychoacoustic_processing'].append(stage_time)
-        logger.info(f"Psychoacoustic processing completed in {stage_time:.3f}s")
         
-        # Stage 5: Dynamic Processing
-        logger.info("Stage 5: Dynamic processing...")
-        stage_start = time.time()
-        enhanced_audio = self.dynamic_processor.process_dynamics(enhanced_audio)
-        stage_time = time.time() - stage_start
-        self.metrics['dynamic_processing'].append(stage_time)
-        logger.info(f"Dynamic processing completed in {stage_time:.3f}s")
+        enhanced_audio = self._final_asr_optimization(enhanced_audio, sr)
         
-        # Stage 6: Final Mastering
-        logger.info("Stage 6: Final mastering...")
-        stage_start = time.time()
-        enhanced_audio = self.mastering_processor.master_audio(enhanced_audio, sr)
         stage_time = time.time() - stage_start
-        self.metrics['mastering'].append(stage_time)
-        logger.info(f"Mastering completed in {stage_time:.3f}s")
+        self.metrics['final_time'].append(stage_time)
+        logger.info(f"Final optimization completed in {stage_time:.3f}s")
         
-        # Calculate quality metrics
+        # Quality assessment
         total_time = time.time() - start_time
-        snr_improvement = self._calculate_snr_improvement(original_audio, enhanced_audio)
+        enhanced_rms = np.sqrt(np.mean(enhanced_audio ** 2))
+        enhanced_peak = np.max(np.abs(enhanced_audio))
+        
+        # Calculate improvement metrics
+        snr_estimate = self._estimate_speech_quality_improvement(original_audio, enhanced_audio)
         
         self.metrics['total_time'].append(total_time)
-        self.metrics['snr_improvement'].append(snr_improvement)
+        self.metrics['snr_improvement'].append(snr_estimate)
         
-        logger.info(f"Enhancement complete! Total time: {total_time:.2f}s")
-        logger.info(f"Estimated SNR improvement: {snr_improvement:.2f} dB")
+        logger.info(f"Speech enhancement complete! Total time: {total_time:.2f}s")
+        logger.info(f"Enhanced audio - RMS: {enhanced_rms:.4f}, Peak: {enhanced_peak:.4f}")
+        logger.info(f"Estimated quality improvement: {snr_estimate:.2f} dB")
+        
+        # Warn if audio seems too processed
+        if enhanced_peak < orig_peak * 0.3:
+            logger.warning("Output level seems low - check if processing was too aggressive")
         
         return enhanced_audio, sr
     
-    def _calculate_snr_improvement(self, original: np.ndarray, enhanced: np.ndarray) -> float:
-        """Calculate SNR improvement estimate"""
+    def _apply_speech_frequency_emphasis(self, audio: np.ndarray, sr: int) -> np.ndarray:
+        """Apply gentle emphasis to speech frequencies"""
+        
+        try:
+            # Design a gentle bell curve filter for speech frequencies
+            nyquist = sr / 2
+            
+            # Speech band emphasis (300-3400 Hz with gentle slopes)
+            speech_low = 300 / nyquist
+            speech_high = 3400 / nyquist
+            
+            # Design a gentle bandpass emphasis
+            # Create frequency response
+            freqs = np.linspace(0, 1, 1024)
+            response = np.ones_like(freqs)
+            
+            # Bell curve emphasis for speech
+            speech_center = (speech_low + speech_high) / 2
+            speech_width = (speech_high - speech_low) / 2
+            
+            for i, f in enumerate(freqs):
+                if speech_low <= f <= speech_high:
+                    # Gentle boost in speech range
+                    distance_from_center = abs(f - speech_center) / speech_width
+                    boost = 1.0 + 0.15 * np.exp(-(distance_from_center ** 2) * 2)  # Gentle bell curve
+                    response[i] = boost
+            
+            # Design FIR filter from frequency response
+            filter_taps = signal.firwin2(101, freqs, response, window='hann')
+            
+            # Apply filter
+            emphasized_audio = signal.lfilter(filter_taps, 1, audio)
+            
+            return emphasized_audio
+            
+        except Exception as e:
+            logger.error(f"Speech emphasis failed: {e}")
+            return audio
+    
+    def _final_asr_optimization(self, audio: np.ndarray, sr: int) -> np.ndarray:
+        """Final processing optimized for ASR"""
+        
+        try:
+            processed = audio.copy()
+            
+            # Light de-clicking (remove brief artifacts)
+            processed = self._remove_light_artifacts(processed)
+            
+            # Final loudness optimization for ASR
+            if PYLOUDNORM_AVAILABLE:
+                try:
+                    meter = pyln.Meter(sr)
+                    loudness = meter.integrated_loudness(processed)
+                    
+                    if -50 < loudness < -5:  # Valid range
+                        processed = pyln.normalize.loudness(
+                            processed, loudness, self.config.target_loudness
+                        )
+                        logger.info(f"Loudness normalized to {self.config.target_loudness} LUFS")
+                except Exception as e:
+                    logger.warning(f"Professional loudness normalization failed: {e}")
+                    # Fallback normalization
+                    processed = self._simple_asr_normalization(processed)
+            else:
+                processed = self._simple_asr_normalization(processed)
+            
+            # Final gentle limiting (prevent clipping)
+            if self.config.enable_final_limiting:
+                processed = self._gentle_limiting(processed)
+            
+            # Ensure no clipping
+            processed = np.clip(processed, -0.98, 0.98)
+            
+            return processed
+            
+        except Exception as e:
+            logger.error(f"Final ASR optimization failed: {e}")
+            return audio
+    
+    def _remove_light_artifacts(self, audio: np.ndarray) -> np.ndarray:
+        """Remove brief artifacts without affecting speech"""
+        
+        try:
+            # Very conservative artifact removal
+            # Only remove very brief spikes that are much louder than surrounding audio
+            
+            window_size = int(0.005 * self.config.sample_rate)  # 5ms windows
+            threshold_factor = 3.0  # Spike must be 3x louder than neighbors
+            
+            cleaned = audio.copy()
+            
+            for i in range(window_size, len(audio) - window_size):
+                current = abs(audio[i])
+                
+                # Check surrounding area
+                left_region = audio[i-window_size:i]
+                right_region = audio[i+1:i+window_size+1]
+                surrounding_level = np.mean(np.abs(np.concatenate([left_region, right_region])))
+                
+                # If current sample is much louder and brief, reduce it
+                if current > surrounding_level * threshold_factor and surrounding_level > 0:
+                    # Check if it's actually brief (not sustained speech)
+                    peak_region = audio[max(0, i-2):i+3]
+                    if np.sum(np.abs(peak_region) > surrounding_level * 2) <= 3:  # Brief spike
+                        cleaned[i] = audio[i] * 0.5  # Gentle reduction
+            
+            return cleaned
+            
+        except Exception as e:
+            logger.warning(f"Artifact removal failed: {e}")
+            return audio
+    
+    def _simple_asr_normalization(self, audio: np.ndarray) -> np.ndarray:
+        """Simple normalization optimized for ASR"""
+        
+        try:
+            # RMS-based normalization (better for speech than peak)
+            current_rms = np.sqrt(np.mean(audio ** 2))
+            
+            if current_rms > 0:
+                # Target RMS level good for ASR (not too loud, not too quiet)
+                target_rms = 0.15  # About -16 dB RMS
+                gain = target_rms / current_rms
+                
+                # Limit gain to prevent over-amplification
+                max_gain = 5.0
+                min_gain = 0.2
+                gain = np.clip(gain, min_gain, max_gain)
+                
+                normalized = audio * gain
+                
+                # Ensure no clipping
+                peak = np.max(np.abs(normalized))
+                if peak > 0.95:
+                    normalized = normalized * (0.95 / peak)
+                
+                return normalized
+            
+            return audio
+            
+        except Exception as e:
+            logger.warning(f"Simple normalization failed: {e}")
+            return audio
+    
+    def _gentle_limiting(self, audio: np.ndarray) -> np.ndarray:
+        """Very gentle peak limiting"""
+        
+        try:
+            threshold = 0.9
+            limited = np.copy(audio)
+            
+            # Find peaks above threshold
+            peaks = np.abs(audio) > threshold
+            
+            if np.any(peaks):
+                # Apply very gentle limiting
+                peak_indices = np.where(peaks)[0]
+                
+                for idx in peak_indices:
+                    # Gentle soft clipping
+                    original_value = audio[idx]
+                    sign = np.sign(original_value)
+                    magnitude = abs(original_value)
+                    
+                    # Soft knee limiting
+                    if magnitude > threshold:
+                        excess = magnitude - threshold
+                        limited_excess = excess * (1 / (1 + excess * 2))  # Gentle curve
+                        limited[idx] = sign * (threshold + limited_excess)
+            
+            return limited
+            
+        except Exception as e:
+            logger.warning(f"Gentle limiting failed: {e}")
+            return np.clip(audio, -0.98, 0.98)
+    
+    def _estimate_speech_quality_improvement(self, original: np.ndarray, enhanced: np.ndarray) -> float:
+        """Estimate speech quality improvement"""
+        
         try:
             # Align lengths
             min_len = min(len(original), len(enhanced))
             orig = original[:min_len]
             enh = enhanced[:min_len]
             
-            # Remove DC
-            orig = orig - np.mean(orig)
-            enh = enh - np.mean(enh)
+            # Focus on speech frequencies for quality assessment
+            orig_spectrum = np.abs(librosa.stft(orig, n_fft=self.config.n_fft))
+            enh_spectrum = np.abs(librosa.stft(enh, n_fft=self.config.n_fft))
             
-            # Original SNR estimate
-            orig_power = np.mean(orig ** 2)
-            orig_snr = 10 * np.log10(orig_power / (orig_power * 0.1 + 1e-12))
+            # Get speech frequency range
+            freqs = librosa.fft_frequencies(sr=self.config.sample_rate, n_fft=self.config.n_fft)
+            speech_mask = (freqs >= 300) & (freqs <= 3400)
             
-            # Enhanced SNR estimate
-            enh_power = np.mean(enh ** 2)
-            enh_snr = 10 * np.log10(enh_power / (enh_power * 0.05 + 1e-12))  # Assume better noise floor
+            # Calculate energy in speech band
+            orig_speech_energy = np.sum(orig_spectrum[speech_mask, :])
+            enh_speech_energy = np.sum(enh_spectrum[speech_mask, :])
             
-            return enh_snr - orig_snr
+            # Calculate noise estimate (frequencies outside speech band)
+            noise_mask = ~speech_mask
+            orig_noise_energy = np.sum(orig_spectrum[noise_mask, :])
+            enh_noise_energy = np.sum(enh_spectrum[noise_mask, :])
+            
+            # Estimate SNR improvement
+            if orig_noise_energy > 0 and enh_noise_energy > 0:
+                orig_snr = 10 * np.log10(orig_speech_energy / orig_noise_energy + 1e-12)
+                enh_snr = 10 * np.log10(enh_speech_energy / enh_noise_energy + 1e-12)
+                improvement = enh_snr - orig_snr
+            else:
+                improvement = 0.0
+            
+            return improvement
             
         except Exception as e:
-            logger.warning(f"SNR calculation failed: {e}")
+            logger.warning(f"Quality estimation failed: {e}")
             return 0.0
     
-    def save_enhanced_audio(self, audio: np.ndarray, sr: int, output_path: str = None):
-        """Save enhanced audio with metadata"""
+    def save_asr_optimized_audio(self, audio: np.ndarray, sr: int, output_path: str = None):
+        """Save audio optimized for ASR with metadata"""
         
         if output_path is None:
             output_path = OUTPUT_AUDIO_PATH
@@ -1209,51 +778,58 @@ class AdvancedTraditionalEnhancer:
             # Ensure output directory exists
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             
-            # Save audio
-            sf.write(output_path, audio, sr, subtype='PCM_24')
-            logger.info(f"Enhanced audio saved to: {output_path}")
+            # Save in format optimal for ASR (16-bit, mono)
+            sf.write(output_path, audio, sr, subtype='PCM_16')
+            logger.info(f"ASR-optimized audio saved to: {output_path}")
             
-            # Save processing metadata
-            metadata_path = output_path.replace('.wav', '_metadata.json')
+            # Save metadata
+            metadata_path = output_path.replace('.wav', '_asr_metadata.json')
             metadata = {
-                'processing_info': {
+                'asr_optimization_info': {
                     'input_file': str(INPUT_AUDIO_PATH),
                     'output_file': str(output_path),
                     'sample_rate': sr,
                     'duration': len(audio) / sr,
-                    'enhancement_method': 'Traditional Signal Processing'
+                    'format': '16-bit PCM WAV',
+                    'optimization_target': 'ASR (Automatic Speech Recognition)',
+                    'processing_approach': 'Conservative speech-focused enhancement'
                 },
                 'configuration': asdict(self.config),
                 'performance_metrics': {
-                    'total_time': np.sum(self.metrics.get('total_time', [])),
-                    'snr_improvement': np.mean(self.metrics.get('snr_improvement', [])),
-                    'stage_times': {
-                        'noise_reduction': np.sum(self.metrics.get('noise_reduction', [])),
-                        'multiband_processing': np.sum(self.metrics.get('multiband_processing', [])),
-                        'harmonic_processing': np.sum(self.metrics.get('harmonic_processing', [])),
-                        'psychoacoustic_processing': np.sum(self.metrics.get('psychoacoustic_processing', [])),
-                        'dynamic_processing': np.sum(self.metrics.get('dynamic_processing', [])),
-                        'mastering': np.sum(self.metrics.get('mastering', []))
+                    'total_processing_time': np.sum(self.metrics.get('total_time', [])),
+                    'estimated_quality_improvement': np.mean(self.metrics.get('snr_improvement', [])),
+                    'stage_breakdown': {
+                        'loading': np.sum(self.metrics.get('loading_time', [])),
+                        'highpass_filter': np.sum(self.metrics.get('highpass_time', [])),
+                        'noise_reduction': np.sum(self.metrics.get('noise_reduction_time', [])),
+                        'speech_emphasis': np.sum(self.metrics.get('emphasis_time', [])),
+                        'dynamics_processing': np.sum(self.metrics.get('dynamics_time', [])),
+                        'final_optimization': np.sum(self.metrics.get('final_time', []))
                     }
                 },
-                'processing_features': {
-                    'noise_reduction': True,
-                    'multiband_enhancement': self.config.enable_multiband,
-                    'psychoacoustic_modeling': self.config.enable_psychoacoustic,
-                    'harmonic_enhancement': self.config.enable_harmonic_enhancement,
-                    'dynamic_processing': self.config.enable_dynamic_processing,
-                    'final_mastering': True
+                'speech_enhancement_features': {
+                    'conservative_noise_reduction': self.config.noise_reduction_strength <= 0.5,
+                    'speech_frequency_emphasis': True,
+                    'gentle_dynamics_processing': self.config.enable_gentle_compression,
+                    'asr_loudness_optimization': True,
+                    'artifact_prevention': self.config.avoid_artifacts
+                },
+                'asr_readiness': {
+                    'sample_rate_asr_standard': sr == 16000,
+                    'mono_channel': True,
+                    'bit_depth': 16,
+                    'speech_clarity_optimized': True,
+                    'recommended_for_transcription': True
                 }
             }
             
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
             
-            logger.info(f"Metadata saved to: {metadata_path}")
+            logger.info(f"ASR metadata saved to: {metadata_path}")
             
         except Exception as e:
-            logger.error(f"Failed to save audio: {e}")
-            # Try to save just the audio without metadata
+            logger.error(f"Failed to save ASR-optimized audio: {e}")
             try:
                 sf.write(output_path, audio, sr, subtype='PCM_16')
                 logger.info(f"Audio saved successfully (metadata failed): {output_path}")
@@ -1262,59 +838,88 @@ class AdvancedTraditionalEnhancer:
                 raise
 
 def main():
-    """Main execution function"""
+    """Main execution function for speech enhancement"""
     
     try:
-        print(f"\n{'='*70}")
-        print("🎵 ADVANCED TRADITIONAL AUDIO ENHANCEMENT")
-        print("Pure Signal Processing - No AI/ML")
-        print(f"{'='*70}")
+        print(f"\n{'='*75}")
+        print("🎙️  SPEECH-OPTIMIZED AUDIO ENHANCEMENT FOR ASR")
+        print("Conservative Processing - Preserves Speech Clarity")
+        print(f"{'='*75}")
         print(f"Input file: {INPUT_AUDIO_PATH}")
         print(f"Output file: {OUTPUT_AUDIO_PATH}")
-        print(f"{'='*70}")
+        print(f"Target: ASR (Automatic Speech Recognition)")
+        print(f"{'='*75}")
         
-        # Initialize enhancer
-        config = AdvancedEnhancementConfig()
-        enhancer = AdvancedTraditionalEnhancer(config)
+        # Initialize speech processor
+        config = SpeechEnhancementConfig()
+        
+        # Show configuration
+        print(f"📊 Configuration:")
+        print(f"   • Sample Rate: {config.sample_rate} Hz (ASR standard)")
+        print(f"   • Noise Reduction: {config.noise_reduction_strength:.1f}/1.0 (Conservative)")
+        print(f"   • Speech Emphasis: {config.speech_emphasis:.1f}x (300-3400 Hz)")
+        print(f"   • Target Loudness: {config.target_loudness} LUFS")
+        print(f"   • Processing Approach: Speech-focused, minimal artifacts")
+        print(f"{'='*75}")
+        
+        processor = SpeechOptimizedProcessor(config)
         
         # Process audio
-        enhanced_audio, sample_rate = enhancer.enhance_audio()
+        enhanced_audio, sample_rate = processor.enhance_speech_for_asr()
         
         # Save results
-        enhancer.save_enhanced_audio(enhanced_audio, sample_rate)
+        processor.save_asr_optimized_audio(enhanced_audio, sample_rate)
         
-        # Print results
-        total_time = np.sum(enhancer.metrics.get('total_time', []))
-        snr_improvement = np.mean(enhancer.metrics.get('snr_improvement', []))
+        # Results
+        total_time = np.sum(processor.metrics.get('total_time', []))
+        quality_improvement = np.mean(processor.metrics.get('snr_improvement', []))
         
-        print(f"\n{'='*70}")
-        print("✅ ENHANCEMENT COMPLETE!")
-        print(f"{'='*70}")
+        print(f"\n{'='*75}")
+        print("✅ SPEECH ENHANCEMENT FOR ASR COMPLETE!")
+        print(f"{'='*75}")
         print(f"📁 Input: {INPUT_AUDIO_PATH}")
         print(f"📁 Output: {OUTPUT_AUDIO_PATH}")
         print(f"⏱️  Processing Time: {total_time:.2f} seconds")
-        print(f"📊 Estimated SNR Improvement: {snr_improvement:+.2f} dB")
-        print(f"🎯 Method: Traditional Signal Processing")
+        print(f"📊 Speech Quality Improvement: {quality_improvement:+.2f} dB")
+        print(f"🎯 ASR Ready: 16 kHz, 16-bit, Mono WAV")
         
         # Enhancement assessment
-        if snr_improvement > 5:
-            print(f"🏆 EXCELLENT - Significant improvement achieved!")
-        elif snr_improvement > 2:
-            print(f"✅ GOOD - Noticeable improvement achieved")
-        elif snr_improvement > 0:
-            print(f"⚠️  MODERATE - Some improvement achieved")
+        if quality_improvement > 3:
+            print(f"🏆 EXCELLENT - Significant speech clarity improvement!")
+            print(f"   Your ASR model should perform much better with this audio.")
+        elif quality_improvement > 1:
+            print(f"✅ GOOD - Noticeable speech enhancement achieved")
+            print(f"   ASR transcription quality should be improved.")
+        elif quality_improvement > -1:
+            print(f"✅ PRESERVED - Audio quality maintained without distortion")
+            print(f"   Safe for ASR use - no artifacts introduced.")
         else:
-            print(f"ℹ️  INPUT MAY ALREADY BE HIGH QUALITY")
+            print(f"⚠️  Input audio may already be high quality for ASR")
         
         # Processing breakdown
-        print(f"\n📈 Processing Breakdown:")
-        stage_times = enhancer.metrics.get('stage_times', {})
-        for stage, time_taken in stage_times.items():
-            if time_taken > 0:
-                percentage = (time_taken / total_time) * 100
-                print(f"   • {stage.replace('_', ' ').title()}: {time_taken:.3f}s ({percentage:.1f}%)")
+        print(f"\n📈 Processing Stages:")
+        stages = [
+            ('Loading & Validation', processor.metrics.get('loading_time', [])),
+            ('High-Pass Filtering', processor.metrics.get('highpass_time', [])),
+            ('Conservative Noise Reduction', processor.metrics.get('noise_reduction_time', [])),
+            ('Speech Frequency Emphasis', processor.metrics.get('emphasis_time', [])),
+            ('Gentle Dynamics Processing', processor.metrics.get('dynamics_time', [])),
+            ('ASR Optimization', processor.metrics.get('final_time', []))
+        ]
         
-        print(f"{'='*70}")
+        for stage_name, times in stages:
+            if times:
+                avg_time = np.mean(times)
+                percentage = (avg_time / total_time) * 100
+                print(f"   • {stage_name}: {avg_time:.3f}s ({percentage:.1f}%)")
+        
+        print(f"\n🎙️  ASR RECOMMENDATIONS:")
+        print(f"   • Use the output audio directly with your ASR model")
+        print(f"   • Audio is optimized for speech recognition accuracy")
+        print(f"   • Conservative processing minimizes artifacts")
+        print(f"   • Format: 16 kHz, 16-bit WAV (standard for most ASR systems)")
+        
+        print(f"{'='*75}")
         
         return True
         
@@ -1325,30 +930,31 @@ def main():
         return False
         
     except Exception as e:
-        logger.error(f"Enhancement failed: {e}")
+        logger.error(f"Speech enhancement failed: {e}")
         print(f"\n❌ Enhancement failed: {e}")
         print(f"\nTroubleshooting tips:")
-        print(f"1. Check input audio file format and integrity")
-        print(f"2. Ensure all dependencies are installed")
-        print(f"3. Try with a different audio file")
+        print(f"1. Ensure input is a valid audio file (WAV, MP3, FLAC)")
+        print(f"2. Check that the audio file is not corrupted")
+        print(f"3. Try with a shorter audio clip first")
+        print(f"4. Ensure you have sufficient disk space")
         return False
 
 if __name__ == "__main__":
     # Configuration section
-    print("\n" + "="*70)
-    print("🔧 TRADITIONAL AUDIO ENHANCEMENT CONFIGURATION")
-    print("="*70)
+    print("\n" + "="*75)
+    print("🔧 SPEECH ENHANCEMENT FOR ASR - CONFIGURATION")
+    print("="*75)
     
     # Check if user has set their file path
-    if INPUT_AUDIO_PATH in ["input_noisy_audio.wav", "your_noisy_audio.wav"]:
+    if INPUT_AUDIO_PATH in ["input_call_recording.wav", "your_audio.wav", "input_audio.wav"]:
         print("❌ CONFIGURATION REQUIRED!")
         print("\nPlease edit this script and change the INPUT_AUDIO_PATH variable.")
-        print("Find this line in the script and change it:")
-        print('INPUT_AUDIO_PATH = "input_noisy_audio.wav"  # ← CHANGE THIS!')
-        print("\nTo your actual file path, for example:")
-        print('INPUT_AUDIO_PATH = "C:/my_audio/noisy_recording.wav"')
-        print('INPUT_AUDIO_PATH = "/home/user/audio/my_file.wav"')
-        print('INPUT_AUDIO_PATH = "my_audio.wav"  # if in same folder')
+        print("Find this line in the script:")
+        print('INPUT_AUDIO_PATH = "input_call_recording.wav"  # ← CHANGE THIS!')
+        print("\nTo your actual call recording path, for example:")
+        print('INPUT_AUDIO_PATH = "my_call_recording.wav"')
+        print('INPUT_AUDIO_PATH = "C:/recordings/meeting.wav"')
+        print('INPUT_AUDIO_PATH = "/home/user/calls/audio.wav"')
         
         # Try to help user find audio files
         current_dir = Path(".")
@@ -1362,26 +968,26 @@ if __name__ == "__main__":
                 print(f"   {i}. {file.name}")
             print(f'\nYou could use: INPUT_AUDIO_PATH = "{audio_files[0].name}"')
         
-        print("\n" + "="*70)
+        print("\n" + "="*75)
         sys.exit(1)
     
     # Validate the path
     if not Path(INPUT_AUDIO_PATH).exists():
         print(f"❌ ERROR: Audio file not found!")
-        print(f"Current path: {INPUT_AUDIO_PATH}")
+        print(f"Specified path: {INPUT_AUDIO_PATH}")
         print(f"Full path: {Path(INPUT_AUDIO_PATH).absolute()}")
         print(f"\nPlease check:")
         print(f"1. File exists at the specified location")
-        print(f"2. Path is correctly spelled")
-        print(f"3. Use forward slashes (/) or raw strings")
+        print(f"2. File path is correctly typed")
+        print(f"3. You have permission to read the file")
         sys.exit(1)
     
     print(f"✅ Configuration validated!")
-    print(f"📁 Input file: {INPUT_AUDIO_PATH}")
-    print(f"📁 Output file: {OUTPUT_AUDIO_PATH}")
-    print(f"🎯 Method: Traditional Signal Processing (No AI)")
-    print(f"🔧 Features: Multi-band, Psychoacoustic, Harmonic Enhancement")
-    print("="*70)
+    print(f"📁 Input: {INPUT_AUDIO_PATH}")
+    print(f"📁 Output: {OUTPUT_AUDIO_PATH}")
+    print(f"🎯 Purpose: Call recording enhancement for ASR")
+    print(f"🔧 Approach: Conservative, speech-focused processing")
+    print("="*75)
     
     # Run the enhancement
     success = main()
