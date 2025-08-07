@@ -123,70 +123,144 @@ class AdvancedNoiseReducer:
     def estimate_noise_profile(self, audio: np.ndarray) -> np.ndarray:
         """Estimate noise profile using multiple methods"""
         
-        # Method 1: Use first 10% of audio (assuming it contains noise)
-        noise_samples = int(0.1 * len(audio))
-        noise_segment = audio[:noise_samples]
+        if len(audio) == 0:
+            # Create a default noise profile
+            freq_bins = self.config.n_fft // 2 + 1
+            self.noise_profile = np.ones(freq_bins) * 0.01
+            return self.noise_profile
         
-        # Method 2: Find quiet segments throughout the audio
-        frame_size = self.config.hop_length * 4
-        energy_threshold = np.percentile(audio ** 2, 10)  # Bottom 10% energy
-        
-        quiet_segments = []
-        for i in range(0, len(audio) - frame_size, frame_size):
-            frame = audio[i:i + frame_size]
-            if np.mean(frame ** 2) < energy_threshold:
-                quiet_segments.append(frame)
-        
-        if quiet_segments:
-            noise_from_quiet = np.concatenate(quiet_segments)
-        else:
-            noise_from_quiet = noise_segment
-        
-        # Combine both methods
-        combined_noise = np.concatenate([noise_segment, noise_from_quiet[:len(noise_segment)]])
-        
-        # Compute spectral profile
-        noise_stft = librosa.stft(combined_noise, 
-                                 n_fft=self.config.n_fft, 
-                                 hop_length=self.config.hop_length)
-        noise_spectrum = np.mean(np.abs(noise_stft), axis=1)
-        
-        # Smooth the noise profile
-        noise_spectrum = signal.medfilt(noise_spectrum, kernel_size=5)
-        
-        self.noise_profile = noise_spectrum
-        return noise_spectrum
+        try:
+            # Method 1: Use first 10% of audio (assuming it contains noise)
+            noise_samples = max(1024, int(0.1 * len(audio)))  # At least 1024 samples
+            noise_samples = min(noise_samples, len(audio) // 2)  # At most half the audio
+            noise_segment = audio[:noise_samples]
+            
+            # Method 2: Find quiet segments throughout the audio
+            frame_size = self.config.hop_length * 4
+            if frame_size >= len(audio):
+                frame_size = len(audio) // 4
+                
+            energy_threshold = np.percentile(audio ** 2, 15)  # Bottom 15% energy
+            
+            quiet_segments = []
+            step_size = max(frame_size // 2, 512)
+            
+            for i in range(0, len(audio) - frame_size, step_size):
+                frame = audio[i:i + frame_size]
+                if len(frame) >= frame_size and np.mean(frame ** 2) < energy_threshold:
+                    quiet_segments.append(frame)
+                    
+                # Limit quiet segments to avoid memory issues
+                if len(quiet_segments) > 20:
+                    break
+            
+            if quiet_segments:
+                noise_from_quiet = np.concatenate(quiet_segments)
+                # Limit size
+                if len(noise_from_quiet) > len(noise_segment) * 2:
+                    noise_from_quiet = noise_from_quiet[:len(noise_segment) * 2]
+            else:
+                noise_from_quiet = noise_segment
+            
+            # Combine both methods
+            combined_noise = np.concatenate([noise_segment, noise_from_quiet[:len(noise_segment)]])
+            
+            # Ensure we have enough samples for STFT
+            min_length = self.config.n_fft * 2
+            if len(combined_noise) < min_length:
+                # Pad or repeat if necessary
+                repetitions = (min_length // len(combined_noise)) + 1
+                combined_noise = np.tile(combined_noise, repetitions)[:min_length]
+            
+            # Compute spectral profile
+            noise_stft = librosa.stft(combined_noise, 
+                                     n_fft=self.config.n_fft, 
+                                     hop_length=self.config.hop_length)
+            noise_spectrum = np.mean(np.abs(noise_stft), axis=1)
+            
+            # Ensure we have a valid spectrum
+            if len(noise_spectrum) == 0 or np.any(np.isnan(noise_spectrum)) or np.any(np.isinf(noise_spectrum)):
+                # Fallback: create a flat noise profile
+                freq_bins = self.config.n_fft // 2 + 1
+                noise_spectrum = np.ones(freq_bins) * 0.01
+                logger.warning("Created fallback noise profile")
+            else:
+                # Smooth the noise profile
+                if len(noise_spectrum) >= 5:
+                    noise_spectrum = signal.medfilt(noise_spectrum, kernel_size=5)
+                
+                # Ensure minimum noise floor
+                noise_spectrum = np.maximum(noise_spectrum, np.max(noise_spectrum) * 0.01)
+            
+            self.noise_profile = noise_spectrum
+            logger.debug(f"Estimated noise profile shape: {noise_spectrum.shape}")
+            return noise_spectrum
+            
+        except Exception as e:
+            logger.error(f"Noise profile estimation failed: {e}")
+            # Create a safe fallback profile
+            freq_bins = self.config.n_fft // 2 + 1
+            self.noise_profile = np.ones(freq_bins) * 0.01
+            return self.noise_profile
     
     def adaptive_spectral_subtraction(self, audio: np.ndarray) -> np.ndarray:
         """Advanced spectral subtraction with adaptive parameters"""
         
+        # Ensure audio is not empty
+        if len(audio) == 0:
+            return audio
+            
         # Estimate noise if not already done
         if self.noise_profile is None:
             self.estimate_noise_profile(audio)
         
-        # Compute STFT
-        stft = librosa.stft(audio, 
-                           n_fft=self.config.n_fft, 
-                           hop_length=self.config.hop_length)
-        magnitude = np.abs(stft)
-        phase = np.angle(stft)
-        
-        # Adaptive over-subtraction factor
-        alpha = self._compute_adaptive_alpha(magnitude)
-        
-        # Spectral subtraction
-        enhanced_magnitude = magnitude - alpha[:, np.newaxis] * self.noise_profile[:, np.newaxis]
-        
-        # Adaptive spectral floor
-        spectral_floor = self._compute_adaptive_floor(magnitude)
-        enhanced_magnitude = np.maximum(enhanced_magnitude, 
-                                       spectral_floor * magnitude)
-        
-        # Reconstruct
-        enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-        enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
-        
-        return enhanced_audio
+        try:
+            # Compute STFT
+            stft = librosa.stft(audio, 
+                               n_fft=self.config.n_fft, 
+                               hop_length=self.config.hop_length)
+            magnitude = np.abs(stft)
+            phase = np.angle(stft)
+            
+            # Debug: Check shapes
+            logger.debug(f"Magnitude shape: {magnitude.shape}")
+            logger.debug(f"Noise profile shape: {self.noise_profile.shape}")
+            
+            # Ensure noise profile matches frequency dimension
+            if len(self.noise_profile) != magnitude.shape[0]:
+                logger.warning(f"Noise profile size mismatch. Adjusting from {len(self.noise_profile)} to {magnitude.shape[0]}")
+                # Resize noise profile to match
+                from scipy.interpolate import interp1d
+                old_indices = np.linspace(0, 1, len(self.noise_profile))
+                new_indices = np.linspace(0, 1, magnitude.shape[0])
+                f = interp1d(old_indices, self.noise_profile, kind='linear', fill_value='extrapolate')
+                self.noise_profile = f(new_indices)
+            
+            # Adaptive over-subtraction factor
+            alpha = self._compute_adaptive_alpha(magnitude)
+            
+            # Spectral subtraction with proper broadcasting
+            noise_profile_2d = self.noise_profile.reshape(-1, 1)  # (freq_bins, 1)
+            alpha_2d = alpha.reshape(-1, 1)  # (freq_bins, 1)
+            enhanced_magnitude = magnitude - alpha_2d * noise_profile_2d
+            
+            # Adaptive spectral floor
+            spectral_floor = self._compute_adaptive_floor(magnitude)
+            enhanced_magnitude = np.maximum(enhanced_magnitude, 
+                                           spectral_floor.reshape(-1, 1) * magnitude)
+            
+            # Reconstruct
+            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
+            enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
+            
+            return enhanced_audio
+            
+        except Exception as e:
+            logger.error(f"Spectral subtraction failed: {e}")
+            logger.error(f"Audio shape: {audio.shape}")
+            if hasattr(self, 'noise_profile') and self.noise_profile is not None:
+                logger.error(f"Noise profile shape: {self.noise_profile.shape}")
+            return audio  # Return original audio on failure
     
     def _compute_adaptive_alpha(self, magnitude: np.ndarray) -> np.ndarray:
         """Compute adaptive over-subtraction factor"""
@@ -229,35 +303,52 @@ class AdvancedNoiseReducer:
     def wiener_filtering(self, audio: np.ndarray) -> np.ndarray:
         """Advanced Wiener filtering"""
         
-        stft = librosa.stft(audio, 
-                           n_fft=self.config.n_fft, 
-                           hop_length=self.config.hop_length)
-        magnitude = np.abs(stft)
-        phase = np.angle(stft)
-        
-        # Estimate noise power spectrum
-        if self.noise_profile is None:
-            self.estimate_noise_profile(audio)
-        
-        noise_power = self.noise_profile ** 2
-        
-        # Signal power estimation
-        signal_power = magnitude ** 2
-        
-        # Wiener gain with smoothing
-        wiener_gain = signal_power / (signal_power + noise_power[:, np.newaxis] + 1e-12)
-        
-        # Smooth the gain across time
-        wiener_gain = signal.medfilt2d(wiener_gain, kernel_size=(3, 5))
-        
-        # Apply gain
-        enhanced_magnitude = wiener_gain * magnitude
-        
-        # Reconstruct
-        enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-        enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
-        
-        return enhanced_audio
+        if len(audio) == 0:
+            return audio
+            
+        try:
+            stft = librosa.stft(audio, 
+                               n_fft=self.config.n_fft, 
+                               hop_length=self.config.hop_length)
+            magnitude = np.abs(stft)
+            phase = np.angle(stft)
+            
+            # Estimate noise power spectrum
+            if self.noise_profile is None:
+                self.estimate_noise_profile(audio)
+            
+            # Ensure noise profile matches magnitude dimensions
+            if len(self.noise_profile) != magnitude.shape[0]:
+                logger.warning(f"Noise profile size mismatch in Wiener filter. Adjusting...")
+                from scipy.interpolate import interp1d
+                old_indices = np.linspace(0, 1, len(self.noise_profile))
+                new_indices = np.linspace(0, 1, magnitude.shape[0])
+                f = interp1d(old_indices, self.noise_profile, kind='linear', fill_value='extrapolate')
+                self.noise_profile = f(new_indices)
+            
+            noise_power = (self.noise_profile ** 2).reshape(-1, 1)  # (freq_bins, 1)
+            
+            # Signal power estimation
+            signal_power = magnitude ** 2
+            
+            # Wiener gain with smoothing
+            wiener_gain = signal_power / (signal_power + noise_power + 1e-12)
+            
+            # Smooth the gain across time
+            wiener_gain = signal.medfilt2d(wiener_gain, kernel_size=(3, 5))
+            
+            # Apply gain
+            enhanced_magnitude = wiener_gain * magnitude
+            
+            # Reconstruct
+            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
+            enhanced_audio = librosa.istft(enhanced_stft, hop_length=self.config.hop_length)
+            
+            return enhanced_audio
+            
+        except Exception as e:
+            logger.error(f"Wiener filtering failed: {e}")
+            return audio  # Return original audio on failure
     
     def spectral_gating(self, audio: np.ndarray) -> np.ndarray:
         """Advanced spectral gating for noise reduction"""
