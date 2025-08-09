@@ -437,8 +437,7 @@ class Gemma3nVisionModel:
                     torch_dtype=self.config.TORCH_DTYPE,
                     local_files_only=local_files_only,
                     trust_remote_code=True,
-                    low_cpu_mem_usage=True,
-                    use_cache=True
+                    low_cpu_mem_usage=True
                 ).eval()
                 logging.info("✅ Model loaded successfully")
             except Exception as e:
@@ -560,8 +559,7 @@ class Gemma3nVisionModel:
                         top_k=self.config.TOP_K,
                         repetition_penalty=self.config.REPETITION_PENALTY,
                         pad_token_id=self.processor.tokenizer.eos_token_id,
-                        eos_token_id=self.processor.tokenizer.eos_token_id,
-                        use_cache=True
+                        eos_token_id=self.processor.tokenizer.eos_token_id
                     )
                 
                 # Decode response
