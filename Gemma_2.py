@@ -336,15 +336,18 @@ class GemmaModel:
                 trust_remote_code=True
             )
             
-            # Load model
+            # Load model with proper device management (FIXED)
             self.model = Gemma3nForConditionalGeneration.from_pretrained(
                 model_path,
-                device_map="auto",
                 torch_dtype=self.config.TORCH_DTYPE,
                 local_files_only=local_files_only,
                 trust_remote_code=True,
                 low_cpu_mem_usage=True
-            ).eval()
+            )
+            
+            # Properly move to device (CRITICAL FIX for meta tensor issue)
+            self.model = self.model.to(self.config.DEVICE)
+            self.model.eval()
             
             self.loaded = True
             logging.info("✅ Gemma 3n model loaded successfully")
@@ -775,35 +778,41 @@ Brief explanation of your decision (1-2 sentences)"""
         
         return grid_image, result_text
     
-    def _process_yolo_batch(self, images_with_paths: List[Tuple[str, Image.Image]]) -> Tuple[Optional[Image.Image], str]:
-        """Process batch with YOLO models"""
-        processed_images = []
+    def _process_yolo_batch(self, images_with_paths: List[Tuple[str, Image.Image]]) -> Tuple[List[Tuple[Image.Image, str]], str]:
+        """Process batch with YOLO models - FIXED to return individual images"""
+        processed_images_with_info = []
         detection_stats = {"total": len(images_with_paths), "processed": 0, "total_objects": 0, "class_counts": {}}
         
         for image_path, image in tqdm(images_with_paths, desc=f"Processing with {self.current_model.model_type}"):
             try:
                 image_array = self.image_processor.prepare_image_for_yolo(image)
                 annotated_image, summary = self.current_model.detect_objects(image_array)
-                processed_images.append(annotated_image)
                 
-                detection_stats["processed"] += 1
+                # Create caption with filename and detection info
+                filename = os.path.basename(image_path)
                 
                 # Extract object count from summary
+                object_count = 0
                 if "Total Objects Detected:" in summary:
                     try:
                         count_line = [line for line in summary.split('\n') if 'Total Objects Detected:' in line][0]
-                        count = int(count_line.split(':')[1].strip())
-                        detection_stats["total_objects"] += count
+                        object_count = int(count_line.split(':')[1].strip())
+                        detection_stats["total_objects"] += object_count
                     except:
                         pass
+                
+                # Create image caption
+                caption = f"{filename} | {object_count} objects detected"
+                
+                processed_images_with_info.append((annotated_image, caption))
+                detection_stats["processed"] += 1
                     
             except Exception as e:
                 logging.warning(f"Error processing {image_path}: {e}")
-                processed_images.append(image)  # Add original if processing fails
+                # Add original image with error caption
+                filename = os.path.basename(image_path)
+                processed_images_with_info.append((image, f"{filename} | Processing Error"))
                 continue
-        
-        # Create image grid
-        grid_image = self.image_processor.create_image_grid(processed_images)
         
         # Create professional batch summary
         avg_objects = detection_stats["total_objects"] / detection_stats["processed"] if detection_stats["processed"] > 0 else 0
@@ -820,7 +829,7 @@ Brief explanation of your decision (1-2 sentences)"""
         result_text += f"- **Average Objects per Image:** {avg_objects:.1f}\n\n"
         
         result_text += "## 🔍 Professional Analysis Summary:\n\n"
-        result_text += "Each image in the grid above has been processed with state-of-the-art object detection, showing:\n\n"
+        result_text += "Each image below has been processed with state-of-the-art object detection, showing:\n\n"
         result_text += "- **Precise Bounding Boxes:** Accurate object localization\n"
         result_text += "- **Confidence Scores:** Reliability indicators for each detection\n"
         result_text += "- **Class Labels:** Identification from 80 COCO object categories\n"
@@ -828,7 +837,7 @@ Brief explanation of your decision (1-2 sentences)"""
         
         result_text += f"**Note:** All images processed using {self.current_model.model_type} professional object detection model with optimized parameters for accuracy and performance.\n"
         
-        return grid_image, result_text
+        return processed_images_with_info, result_text
 
 class ProfessionalGradioInterface:
     """Professional software-grade Gradio interface"""
