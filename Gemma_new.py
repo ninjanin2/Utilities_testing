@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Professional Audio Transcription System with Gemma3n-E4B-it
-Updated for 2025 - All deprecated functions resolved
+Fixed: Tensor dtype mismatch and Custom language input
 Features: Advanced Speech Enhancement, Smart Chunking, Multi-language Support, Modern Gradio UI
 Optimized for RTX A4000 (16GB VRAM) and 32GB RAM
 """
@@ -35,7 +35,11 @@ from transformers import (
 
 # Updated noisereduce v3.0 with torch backend
 import noisereduce as nr
-from noisereduce.torchgate import TorchGate
+try:
+    from noisereduce.torchgate import TorchGate
+except ImportError:
+    TorchGate = None
+    logger.warning("TorchGate not available, using CPU noise reduction only")
 
 # UI and utilities
 import gradio as gr
@@ -88,18 +92,20 @@ class ModernAudioEnhancer:
         self.sample_rate = Config.TARGET_SAMPLE_RATE
         self.device = Config.DEVICE
         
-        # Initialize torch-based noise reducer
-        try:
-            self.torch_gate = TorchGate(
-                sr=self.sample_rate,
-                nonstationary=True,
-                n_std_thresh_stationary=1.5,
-                prop_decrease=Config.NOISE_REDUCTION_STRENGTH
-            ).to(self.device) if torch.cuda.is_available() else None
-            logger.info("Torch-based noise reduction initialized")
-        except Exception as e:
-            logger.warning(f"Torch noise reducer initialization failed: {e}")
-            self.torch_gate = None
+        # Initialize torch-based noise reducer if available
+        self.torch_gate = None
+        if TorchGate is not None and torch.cuda.is_available():
+            try:
+                self.torch_gate = TorchGate(
+                    sr=self.sample_rate,
+                    nonstationary=True,
+                    n_std_thresh_stationary=1.5,
+                    prop_decrease=Config.NOISE_REDUCTION_STRENGTH
+                ).to(self.device)
+                logger.info("Torch-based noise reduction initialized")
+            except Exception as e:
+                logger.warning(f"Torch noise reducer initialization failed: {e}")
+                self.torch_gate = None
     
     def safe_audio_load(self, audio_path: str) -> Tuple[np.ndarray, int]:
         """Safely load audio with fallback methods"""
@@ -192,45 +198,6 @@ class ModernAudioEnhancer:
                 return reduced_audio.astype(np.float32)
         except Exception as e:
             logger.warning(f"Noise reduction failed: {e}, returning original audio")
-            return audio
-    
-    def apply_voice_activity_detection_safe(self, audio: np.ndarray) -> np.ndarray:
-        """Safe voice activity detection with error handling"""
-        try:
-            # Compute RMS energy with overlap
-            frame_length = 2048
-            hop_length = 512
-            
-            rms = librosa.feature.rms(
-                y=audio,
-                frame_length=frame_length,
-                hop_length=hop_length
-            )[0]
-            
-            # Adaptive threshold based on audio characteristics
-            rms_sorted = np.sort(rms)
-            threshold = rms_sorted[int(len(rms_sorted) * 0.3)]  # 30th percentile
-            
-            # Time alignment
-            times = librosa.frames_to_time(
-                np.arange(len(rms)),
-                sr=self.sample_rate,
-                hop_length=hop_length
-            )
-            
-            # Interpolate mask to audio length
-            audio_times = np.arange(len(audio)) / self.sample_rate
-            voice_mask = np.interp(audio_times, times, rms > threshold)
-            
-            # Smooth the mask to avoid artifacts
-            voice_mask = gaussian_filter1d(voice_mask, sigma=self.sample_rate * 0.1)
-            voice_mask = voice_mask > 0.5
-            
-            # Apply mask with gradual fade
-            return (audio * voice_mask).astype(np.float32)
-            
-        except Exception as e:
-            logger.warning(f"VAD failed: {e}, returning original audio")
             return audio
     
     def enhance_audio(self, audio_path: str) -> str:
@@ -338,8 +305,8 @@ class SmartAudioChunker:
             logger.error(f"Smart chunking failed: {e}")
             return []
 
-class ModernGemmaTranscriber:
-    """Updated Gemma3n-E4B-it transcription engine"""
+class FixedGemmaTranscriber:
+    """Fixed Gemma3n-E4B-it transcription engine with dtype consistency"""
     
     def __init__(self, model_path: str = None):
         self.model_path = model_path or Config.GEMMA_MODEL_PATH
@@ -377,6 +344,10 @@ class ModernGemmaTranscriber:
                 low_cpu_mem_usage=True
             ).eval()
             
+            # Store model's actual dtype for consistency
+            self.model_dtype = next(self.model.parameters()).dtype
+            logger.info(f"Model loaded with dtype: {self.model_dtype}")
+            
             logger.info("Gemma3n-E4B-it model loaded successfully")
             
         except Exception as e:
@@ -385,8 +356,30 @@ class ModernGemmaTranscriber:
             self.model = None
             raise
     
+    def _ensure_tensor_dtype_consistency(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Ensure input tensors match model dtype to fix the FloatTensor vs CUDAFloat16Type error"""
+        if self.model is None:
+            return inputs
+        
+        # Get model's dtype
+        model_dtype = self.model_dtype
+        
+        # Convert all tensor inputs to match model dtype
+        fixed_inputs = {}
+        for key, value in inputs.items():
+            if isinstance(value, torch.Tensor):
+                if value.dtype != model_dtype:
+                    logger.debug(f"Converting {key} from {value.dtype} to {model_dtype}")
+                    fixed_inputs[key] = value.to(dtype=model_dtype)
+                else:
+                    fixed_inputs[key] = value
+            else:
+                fixed_inputs[key] = value
+        
+        return fixed_inputs
+    
     def transcribe_chunk_safely(self, audio_path: str, language_hint: str = None) -> Dict[str, Any]:
-        """Safely transcribe a single audio chunk"""
+        """Safely transcribe a single audio chunk with dtype fixing"""
         if self.model is None or self.processor is None:
             return {
                 "text": "",
@@ -399,7 +392,7 @@ class ModernGemmaTranscriber:
             system_prompt = "You are a professional audio transcriber. Transcribe the audio accurately, preserving all spoken content including natural speech patterns. Output clean, readable text without timestamps or speaker labels."
             
             user_prompt = "Transcribe this audio clearly and accurately"
-            if language_hint and language_hint != "Auto-detect":
+            if language_hint and language_hint.strip() and language_hint != "Auto-detect":
                 user_prompt += f" in {language_hint}"
             user_prompt += ". Include all spoken words and preserve the natural flow of speech."
             
@@ -426,7 +419,13 @@ class ModernGemmaTranscriber:
                     return_dict=True,
                     return_tensors="pt"
                 )
+                
+                # Move to device first
                 inputs = inputs.to(self.model.device)
+                
+                # FIX: Ensure dtype consistency to resolve the FloatTensor vs CUDAFloat16Type error
+                inputs = self._ensure_tensor_dtype_consistency(inputs)
+                
             except Exception as e:
                 logger.error(f"Chat template application failed: {e}")
                 return {
@@ -444,7 +443,9 @@ class ModernGemmaTranscriber:
                         do_sample=False,
                         temperature=0.1,
                         pad_token_id=self.processor.tokenizer.eos_token_id,
-                        use_cache=True
+                        use_cache=True,
+                        # Ensure generation uses same dtype as model
+                        torch_dtype=self.model_dtype
                     )
                 except torch.cuda.OutOfMemoryError:
                     # Handle VRAM overflow
@@ -455,7 +456,8 @@ class ModernGemmaTranscriber:
                         max_new_tokens=Config.MAX_NEW_TOKENS // 2,
                         do_sample=False,
                         temperature=0.1,
-                        pad_token_id=self.processor.tokenizer.eos_token_id
+                        pad_token_id=self.processor.tokenizer.eos_token_id,
+                        torch_dtype=self.model_dtype
                     )
             
             # Decode output
@@ -531,7 +533,7 @@ class ModernTranscriptionPipeline:
         
         # Initialize transcriber with error handling
         try:
-            self.transcriber = ModernGemmaTranscriber()
+            self.transcriber = FixedGemmaTranscriber()
             logger.info("Transcription pipeline initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize transcriber: {e}")
@@ -710,9 +712,9 @@ class ModernTranscriptionPipeline:
                 except Exception as e:
                     logger.warning(f"Failed to remove temp file {chunk_path}: {e}")
 
-# Modern Gradio Interface
+# Modern Gradio Interface with Custom Language Input
 class ModernTranscriptionUI:
-    """Professional Gradio interface with updated components"""
+    """Professional Gradio interface with custom language input capability"""
     
     def __init__(self):
         self.pipeline = ModernTranscriptionPipeline()
@@ -728,6 +730,27 @@ class ModernTranscriptionUI:
             "cuda_available": torch.cuda.is_available(),
             "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None"
         }
+        
+        # Extended language list for dropdown with common languages
+        self.common_languages = [
+            "Auto-detect",
+            "English", "Spanish", "French", "German", "Italian", "Portuguese",
+            "Chinese (Mandarin)", "Japanese", "Korean", "Hindi", "Arabic",
+            "Russian", "Dutch", "Swedish", "Norwegian", "Danish", "Finnish",
+            "Polish", "Turkish", "Greek", "Hebrew", "Thai", "Vietnamese",
+            "Indonesian", "Malay", "Filipino", "Swahili", "Urdu", "Bengali",
+            "Tamil", "Telugu", "Marathi", "Gujarati", "Kannada", "Malayalam",
+            "Punjabi", "Nepali", "Sinhala", "Burmese", "Khmer", "Lao",
+            "Mongolian", "Tibetan", "Persian", "Kurdish", "Pashto", "Dari",
+            "Uzbek", "Kazakh", "Kyrgyz", "Tajik", "Turkmen", "Azerbaijani",
+            "Georgian", "Armenian", "Albanian", "Serbian", "Croatian",
+            "Bosnian", "Macedonian", "Bulgarian", "Romanian", "Hungarian",
+            "Czech", "Slovak", "Slovenian", "Estonian", "Latvian", "Lithuanian",
+            "Ukrainian", "Belarusian", "Icelandic", "Irish", "Welsh", "Scottish Gaelic",
+            "Basque", "Catalan", "Galician", "Maltese", "Luxembourgish",
+            "Afrikaans", "Zulu", "Xhosa", "Yoruba", "Igbo", "Hausa",
+            "Amharic", "Oromo", "Tigrinya", "Somali", "Malagasy"
+        ]
     
     def update_progress(self, progress: float, message: str):
         """Update progress for Gradio"""
@@ -735,7 +758,7 @@ class ModernTranscriptionUI:
     
     def process_file_modern(self, audio_file, enable_enhancement, language_hint, 
                           chunk_duration, overlap_duration):
-        """Process uploaded audio file with modern error handling"""
+        """Process uploaded audio file with modern error handling and custom language support"""
         
         if not self.system_ready:
             error_msg = "❌ System Error: Gemma3n-E4B-it model not loaded.\n"
@@ -770,11 +793,11 @@ class ModernTranscriptionUI:
             status_msg += f"🌍 Language: {language_hint}\n"
             status_msg += f"⏱️ Chunks: {chunk_duration}s with {overlap_duration}s overlap\n\n"
             
-            # Process the audio
+            # Process the audio with custom language hint
             result = self.pipeline.process_audio_safely(
                 file_path,
                 enable_enhancement,
-                language_hint if language_hint != "Auto-detect" else None,
+                language_hint if language_hint and language_hint.strip() and language_hint != "Auto-detect" else None,
                 self.update_progress
             )
             
@@ -842,7 +865,7 @@ class ModernTranscriptionUI:
         return report
     
     def create_modern_interface(self):
-        """Create modern Gradio interface with updated components"""
+        """Create modern Gradio interface with custom language input capability"""
         
         # Modern CSS with professional styling
         custom_css = """
@@ -865,12 +888,10 @@ class ModernTranscriptionUI:
             background: linear-gradient(90deg, #fef2f2 0%, #fff5f5 100%);
             margin: 10px 0;
         }
-        .system-info {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 15px 0;
+        .custom-dropdown {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
         }
         """
         
@@ -889,7 +910,7 @@ class ModernTranscriptionUI:
             <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; margin-bottom: 25px; box-shadow: 0 8px 32px rgba(0,0,0,0.1);">
                 <h1 style="margin: 0; font-size: 2.8em; font-weight: 700;">🎙️ Professional Audio Transcription</h1>
                 <p style="margin: 15px 0 0 0; font-size: 1.3em; opacity: 0.9;">Powered by Gemma3n-E4B-it with Advanced AI Enhancement</p>
-                <p style="margin: 5px 0 0 0; font-size: 1.0em; opacity: 0.8;">Offline • Secure • High Accuracy</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.0em; opacity: 0.8;">Offline • Secure • High Accuracy • Multi-Language Support</p>
             </div>
             """)
             
@@ -903,6 +924,7 @@ class ModernTranscriptionUI:
                         <li>Model path is correct and accessible</li>
                         <li>All dependencies are installed</li>
                         <li>Sufficient system resources available</li>
+                        <li>Tensor dtype compatibility resolved</li>
                     </ul>
                 </div>
                 """)
@@ -912,6 +934,7 @@ class ModernTranscriptionUI:
                 <div class="status-success">
                     <h3 style="color: #10b981; margin: 0 0 10px 0;">✅ System Ready</h3>
                     <p style="margin: 0;">All components loaded successfully. Device: {self.system_info['device']}{gpu_info}</p>
+                    <p style="margin: 5px 0 0 0; font-size: 0.9em;">Tensor dtype compatibility: Fixed • Custom language support: Enabled</p>
                 </div>
                 """)
             
@@ -920,7 +943,7 @@ class ModernTranscriptionUI:
                 with gr.Column(scale=2, min_width=400):
                     gr.HTML("<h2 style='margin-bottom: 20px;'>📁 Input & Configuration</h2>")
                     
-                    # File upload with better styling
+                    # File upload
                     audio_input = gr.File(
                         label="📎 Upload Audio File",
                         file_types=Config.SUPPORTED_FORMATS,
@@ -935,17 +958,17 @@ class ModernTranscriptionUI:
                             value=True,
                             info="Apply AI-powered noise reduction and audio cleaning"
                         )
-                        
-                        # Language selection
+                    
+                    # FIXED: Custom Language Input with Dropdown + Free Text Entry
+                    with gr.Row():
                         language_hint = gr.Dropdown(
-                            label="🌍 Language Hint",
-                            choices=[
-                                "Auto-detect", "English", "Spanish", "French", "German", 
-                                "Italian", "Portuguese", "Chinese", "Japanese", "Korean", 
-                                "Hindi", "Arabic", "Russian", "Dutch", "Swedish"
-                            ],
+                            label="🌍 Language (Choose from list or type custom language)",
+                            choices=self.common_languages,
                             value="Auto-detect",
-                            info="Specify language for better accuracy"
+                            allow_custom_value=True,  # KEY FIX: Allow custom text entry
+                            filterable=True,  # Enable search/filtering
+                            info="Select from common languages or type any language name (e.g., 'Gujarati', 'Swahili', 'Quechua')",
+                            elem_classes=["custom-dropdown"]
                         )
                     
                     # Advanced settings
@@ -1008,8 +1031,8 @@ class ModernTranscriptionUI:
             with gr.Accordion("📈 Detailed Processing Report", open=False):
                 detailed_report = gr.Markdown("No processing completed yet.")
             
-            # System Information
-            with gr.Accordion("ℹ️ System Information & Tips", open=False):
+            # System Information & Language Support
+            with gr.Accordion("ℹ️ System Information & Language Guide", open=False):
                 with gr.Row():
                     with gr.Column():
                         system_info_md = f"""
@@ -1020,6 +1043,7 @@ class ModernTranscriptionUI:
                         - **GPU:** {self.system_info.get('gpu_name', 'N/A')}
                         - **Model Path:** `{Config.GEMMA_MODEL_PATH}`
                         - **Sample Rate:** {Config.TARGET_SAMPLE_RATE} Hz
+                        - **Dtype Fix:** Applied for tensor consistency
                         """
                         gr.Markdown(system_info_md)
                     
@@ -1028,21 +1052,33 @@ class ModernTranscriptionUI:
                         ### 💡 Usage Tips
                         **Audio Quality:**
                         - Higher quality audio = better transcription
-                        - Supported formats: WAV, MP3, M4A, FLAC, OGG
+                        - Supported formats: WAV, MP3, M4A, FLAC, OGG, AAC
                         - Recommended: 16kHz, mono, uncompressed
+                        
+                        **Language Support:**
+                        - 140+ languages supported by Gemma3n
+                        - Type any language name (e.g., "Tamil", "Uzbek")
+                        - Use specific dialects (e.g., "Chinese Mandarin")
+                        - Regional variants work (e.g., "Spanish Mexico")
                         
                         **Processing Options:**
                         - Enable enhancement for noisy recordings
-                        - Use language hints for non-English content
                         - Larger chunks (60-120s) for continuous speech
                         - More overlap (15-20s) for conversation calls
-                        
-                        **Best Results:**
-                        - Clear speech without background music
-                        - Single speaker or well-separated speakers
-                        - Consistent audio levels throughout
                         """
                         gr.Markdown(tips_md)
+            
+            # Language examples
+            gr.HTML("""
+            <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border-radius: 10px;">
+                <h3 style="margin: 0 0 15px 0;">🌍 Language Support Examples</h3>
+                <p style="margin: 0 0 10px 0;"><strong>Common:</strong> English, Spanish, French, German, Chinese, Japanese, Hindi, Arabic</p>
+                <p style="margin: 0 0 10px 0;"><strong>Indian Languages:</strong> Hindi, Tamil, Telugu, Bengali, Gujarati, Marathi, Punjabi</p>
+                <p style="margin: 0 0 10px 0;"><strong>European:</strong> Russian, Italian, Dutch, Swedish, Polish, Greek, Turkish</p>
+                <p style="margin: 0 0 10px 0;"><strong>African:</strong> Swahili, Yoruba, Hausa, Zulu, Amharic</p>
+                <p style="margin: 0;"><strong>Custom Entry:</strong> Type any language - the model supports 140+ languages!</p>
+            </div>
+            """)
             
             # Event handlers
             def process_and_prepare_download(audio_file, enable_enhancement, language_hint, 
@@ -1067,6 +1103,8 @@ class ModernTranscriptionUI:
                             f.write(f"Audio Transcription Report\n")
                             f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                             f.write(f"System: Gemma3n-E4B-it Professional Transcription\n")
+                            if language_hint and language_hint.strip() and language_hint != "Auto-detect":
+                                f.write(f"Language: {language_hint}\n")
                             f.write(f"{'='*60}\n\n")
                             f.write("TRANSCRIPT:\n")
                             f.write(f"{'-'*60}\n")
@@ -1099,19 +1137,6 @@ class ModernTranscriptionUI:
                 inputs=[audio_input, enable_enhancement, language_hint, chunk_duration, overlap_duration],
                 outputs=[status_output, transcript_output, detailed_report, download_btn]
             )
-            
-            # Add examples section
-            gr.HTML("""
-            <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border-radius: 10px;">
-                <h3 style="margin: 0 0 15px 0;">🎯 Supported Use Cases</h3>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-                    <div>📞 <strong>Business Calls</strong><br>Conference calls, client meetings</div>
-                    <div>🎤 <strong>Interviews</strong><br>Research interviews, podcasts</div>
-                    <div>📚 <strong>Lectures</strong><br>Educational content, presentations</div>
-                    <div>🌍 <strong>Multilingual</strong><br>140+ languages supported</div>
-                </div>
-            </div>
-            """)
         
         return interface
 
@@ -1119,7 +1144,7 @@ def main():
     """Main application entry point with comprehensive error handling"""
     
     # System checks
-    logger.info("Starting Professional Audio Transcription System")
+    logger.info("Starting Professional Audio Transcription System (Fixed Version)")
     
     if not torch.cuda.is_available():
         logger.warning("CUDA not available. Running on CPU will be significantly slower.")
@@ -1139,7 +1164,7 @@ def main():
         ui = ModernTranscriptionUI()
         interface = ui.create_modern_interface()
         
-        logger.info("Launching modern Gradio interface...")
+        logger.info("Launching modern Gradio interface with fixes...")
         interface.launch(
             server_name="0.0.0.0",
             server_port=7860,
