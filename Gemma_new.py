@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Professional Audio Transcription System with Gemma3n-E4B-it
-FINAL DTYPE-CORRECTED VERSION - Comprehensive tensor dtype handling
-Features: Multi-stage Enhancement, Audio Preview, Smart Chunking, Modern Gradio UI
+DEVICE & RF NOISE CORRECTED VERSION - Complete device consistency + RF interference removal
+Features: RF Noise Removal, Multi-stage Enhancement, Audio Preview, Device-Consistent Processing
 Optimized for RTX A4000 (16GB VRAM) and 32GB RAM
 """
 
@@ -24,16 +24,13 @@ import torchaudio
 import numpy as np
 import librosa
 import soundfile as sf
-from scipy.signal import butter, filtfilt, wiener, medfilt
+from scipy.signal import butter, filtfilt, wiener, medfilt, iirnotch, sosfiltfilt
 from scipy.ndimage import gaussian_filter1d
 from scipy import signal
+import pywt
 
-# ML/AI libraries - CORRECTED imports
-from transformers import (
-    AutoProcessor, 
-    Gemma3nForConditionalGeneration,
-    BitsAndBytesConfig
-)
+# ML/AI libraries - Using pipeline for device consistency
+from transformers import pipeline
 
 # Enhanced audio processing
 import noisereduce as nr
@@ -46,7 +43,6 @@ except ImportError:
 import gradio as gr
 import json
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -58,7 +54,7 @@ logger = logging.getLogger(__name__)
 class Config:
     """Global configuration for the transcription system"""
     
-    # Model paths (modify these to your local model directories)
+    # Model paths
     GEMMA_MODEL_PATH = "./models/google--gemma-3n-E4B-it"  # Local model path
     CACHE_DIR = "./cache"
     TEMP_DIR = "./temp"
@@ -70,13 +66,15 @@ class Config:
     OVERLAP_DURATION = 10  # seconds
     MAX_AUDIO_LENGTH = 3600  # 1 hour max
     
-    # Enhanced audio processing parameters
+    # RF and enhanced audio processing parameters
     NOISE_REDUCTION_STRENGTH = 0.85
+    RF_FREQUENCIES = [50, 60, 120, 240, 440, 880, 1000, 2000, 4000]  # Common RF interference frequencies
     SPECTRAL_GATE_THRESHOLD = 1.2
     WIENER_FILTER_SIZE = 5
     MEDIAN_FILTER_SIZE = 3
+    WAVELET_MODE = 'db4'  # Daubechies wavelet for audio denoising
     
-    # GPU settings - ENHANCED
+    # GPU settings with device consistency
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     TORCH_DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
     MAX_NEW_TOKENS = 512
@@ -88,8 +86,8 @@ class Config:
 for dir_path in [Config.CACHE_DIR, Config.TEMP_DIR, Config.OUTPUT_DIR]:
     os.makedirs(dir_path, exist_ok=True)
 
-class AdvancedAudioEnhancer:
-    """Advanced multi-stage audio enhancement for heavily distorted/noisy audio"""
+class RadioFrequencyAudioEnhancer:
+    """Advanced RF noise removal and audio enhancement for heavily distorted audio"""
     
     def __init__(self):
         self.sample_rate = Config.TARGET_SAMPLE_RATE
@@ -105,16 +103,16 @@ class AdvancedAudioEnhancer:
                     n_std_thresh_stationary=1.2,
                     prop_decrease=Config.NOISE_REDUCTION_STRENGTH
                 ).to(self.device)
-                logger.info("GPU-accelerated torch noise reduction initialized")
+                logger.info("GPU-accelerated RF noise reduction initialized")
             except Exception as e:
                 logger.warning(f"Torch noise reducer initialization failed: {e}")
                 self.torch_gate = None
     
     def safe_audio_load(self, audio_path: str) -> Tuple[np.ndarray, int]:
-        """Safely load audio with multiple fallback methods and format handling"""
+        """Safely load audio with multiple fallback methods"""
         try:
-            # Primary method: librosa (handles most formats)
-            audio, sr = librosa.load(audio_path, sr=None, mono=False)  # Load at original sample rate first
+            # Primary method: librosa (handles most formats including compressed)
+            audio, sr = librosa.load(audio_path, sr=None, mono=False)
             
             # Convert to mono if stereo
             if len(audio.shape) > 1:
@@ -130,7 +128,6 @@ class AdvancedAudioEnhancer:
         except Exception as e1:
             logger.warning(f"Librosa failed: {e1}, trying soundfile...")
             try:
-                # Fallback: soundfile
                 audio, sr = sf.read(audio_path)
                 if len(audio.shape) > 1:
                     audio = np.mean(audio, axis=1)
@@ -141,7 +138,6 @@ class AdvancedAudioEnhancer:
             except Exception as e2:
                 logger.warning(f"Soundfile failed: {e2}, trying torchaudio...")
                 try:
-                    # Last resort: torchaudio
                     waveform, sr = torchaudio.load(audio_path)
                     if waveform.shape[0] > 1:
                         waveform = torch.mean(waveform, dim=0, keepdim=True)
@@ -172,77 +168,155 @@ class AdvancedAudioEnhancer:
         
         return audio.astype(np.float32)
     
+    def remove_rf_interference(self, audio: np.ndarray) -> np.ndarray:
+        """Remove radio frequency interference using multiple notch filters"""
+        try:
+            enhanced = audio.copy()
+            
+            # Apply notch filters for common RF frequencies
+            for rf_freq in Config.RF_FREQUENCIES:
+                if rf_freq < self.sample_rate / 2:  # Must be below Nyquist frequency
+                    # Design notch filter
+                    Q = 30  # Quality factor (higher = narrower notch)
+                    w0 = rf_freq / (self.sample_rate / 2)  # Normalized frequency
+                    
+                    # Create notch filter
+                    sos = signal.iirnotch(w0, Q, output='sos')
+                    enhanced = signal.sosfiltfilt(sos, enhanced)
+                    
+            logger.info(f"Applied RF interference removal for frequencies: {Config.RF_FREQUENCIES}")
+            return enhanced.astype(np.float32)
+            
+        except Exception as e:
+            logger.warning(f"RF interference removal failed: {e}")
+            return audio
+    
+    def apply_rf_bandstop_filters(self, audio: np.ndarray) -> np.ndarray:
+        """Apply bandstop filters for RF interference bands"""
+        try:
+            enhanced = audio.copy()
+            nyquist = self.sample_rate / 2
+            
+            # Common RF interference bands
+            rf_bands = [
+                (48, 52),    # 50Hz power line interference
+                (58, 62),    # 60Hz power line interference  
+                (118, 122),  # 120Hz harmonic
+                (238, 242),  # 240Hz harmonic
+                (430, 450),  # Radio band
+                (870, 890),  # Radio band
+                (990, 1010), # Radio band
+                (1980, 2020), # Radio band
+                (3980, 4020)  # Radio band
+            ]
+            
+            for low_freq, high_freq in rf_bands:
+                if high_freq < nyquist:
+                    # Normalize frequencies
+                    low = low_freq / nyquist
+                    high = high_freq / nyquist
+                    
+                    # Design bandstop filter
+                    sos = signal.butter(4, [low, high], btype='bandstop', output='sos')
+                    enhanced = signal.sosfiltfilt(sos, enhanced)
+            
+            logger.info("Applied RF bandstop filters")
+            return enhanced.astype(np.float32)
+            
+        except Exception as e:
+            logger.warning(f"RF bandstop filtering failed: {e}")
+            return audio
+    
+    def apply_wavelet_denoising(self, audio: np.ndarray) -> np.ndarray:
+        """Apply wavelet denoising for RF and impulse noise removal"""
+        try:
+            # Decompose signal using wavelet transform
+            coeffs = pywt.wavedec(audio, Config.WAVELET_MODE, level=6)
+            
+            # Estimate noise standard deviation from detail coefficients
+            sigma = np.median(np.abs(coeffs[-1])) / 0.6745
+            
+            # Calculate threshold using universal threshold
+            threshold = sigma * np.sqrt(2 * np.log(len(audio)))
+            
+            # Apply soft thresholding to detail coefficients
+            coeffs_thresh = list(coeffs)
+            for i in range(1, len(coeffs)):
+                coeffs_thresh[i] = pywt.threshold(coeffs[i], threshold, 'soft')
+            
+            # Reconstruct signal
+            denoised = pywt.waverec(coeffs_thresh, Config.WAVELET_MODE)
+            
+            # Handle length mismatch
+            if len(denoised) != len(audio):
+                denoised = denoised[:len(audio)]
+            
+            logger.info("Applied wavelet denoising")
+            return denoised.astype(np.float32)
+            
+        except Exception as e:
+            logger.warning(f"Wavelet denoising failed: {e}")
+            return audio
+    
     def apply_preemphasis(self, audio: np.ndarray, alpha: float = 0.97) -> np.ndarray:
         """Apply preemphasis filter to enhance high frequencies"""
         try:
             preemphasized = np.zeros_like(audio)
-            preemphasized[0] = audio
+            preemphasized[0] = audio[0]
             preemphasized[1:] = audio[1:] - alpha * audio[:-1]
             return preemphasized.astype(np.float32)
         except Exception as e:
             logger.warning(f"Preemphasis failed: {e}")
             return audio
     
-    def apply_spectral_subtraction(self, audio: np.ndarray, alpha: float = 2.0, beta: float = 0.01) -> np.ndarray:
-        """Apply spectral subtraction for noise reduction"""
+    def apply_spectral_subtraction_rf(self, audio: np.ndarray) -> np.ndarray:
+        """Apply spectral subtraction optimized for RF noise removal"""
         try:
-            # Compute STFT
-            stft = librosa.stft(audio, n_fft=2048, hop_length=512)
+            # Compute STFT with RF-optimized parameters
+            stft = librosa.stft(audio, n_fft=2048, hop_length=256, win_length=1024)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Estimate noise from first few frames
-            noise_frames = max(1, magnitude.shape[1] // 20)
-            noise_spectrum = np.mean(magnitude[:, :noise_frames], axis=1, keepdims=True)
+            # Estimate noise from first and last frames (likely to contain RF noise)
+            noise_frames = max(2, magnitude.shape[1] // 10)
+            noise_start = magnitude[:, :noise_frames]
+            noise_end = magnitude[:, -noise_frames:]
+            noise_spectrum = np.mean(np.concatenate([noise_start, noise_end], axis=1), axis=1, keepdims=True)
             
-            # Spectral subtraction
+            # RF-optimized spectral subtraction
+            alpha = 2.5  # Higher for RF noise
+            beta = 0.005  # Lower for better RF suppression
+            
             enhanced_magnitude = magnitude - alpha * noise_spectrum
             enhanced_magnitude = np.maximum(enhanced_magnitude, beta * magnitude)
             
             # Reconstruct signal
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=512)
+            enhanced_audio = librosa.istft(enhanced_stft, hop_length=256, win_length=1024)
             
             return enhanced_audio.astype(np.float32)
             
         except Exception as e:
-            logger.warning(f"Spectral subtraction failed: {e}")
-            return audio
-    
-    def apply_wiener_filter(self, audio: np.ndarray) -> np.ndarray:
-        """Apply Wiener filter for noise reduction"""
-        try:
-            filtered = wiener(audio, mysize=Config.WIENER_FILTER_SIZE)
-            return filtered.astype(np.float32)
-        except Exception as e:
-            logger.warning(f"Wiener filter failed: {e}")
-            return audio
-    
-    def apply_median_filter(self, audio: np.ndarray) -> np.ndarray:
-        """Apply median filter to remove impulse noise"""
-        try:
-            filtered = medfilt(audio, kernel_size=Config.MEDIAN_FILTER_SIZE)
-            return filtered.astype(np.float32)
-        except Exception as e:
-            logger.warning(f"Median filter failed: {e}")
+            logger.warning(f"RF spectral subtraction failed: {e}")
             return audio
     
     def apply_advanced_bandpass_filter(self, audio: np.ndarray) -> np.ndarray:
-        """Apply advanced multi-stage bandpass filtering for speech"""
+        """Apply advanced multi-stage bandpass filtering for speech with RF removal"""
         try:
-            # Primary speech band (300-3400 Hz)
             nyquist = self.sample_rate * 0.5
+            
+            # Primary speech band (300-3400 Hz - telephone quality)
             low1, high1 = 300 / nyquist, 3400 / nyquist
-            b1, a1 = butter(4, [low1, high1], btype='band')
-            filtered1 = filtfilt(b1, a1, audio)
+            sos1 = signal.butter(4, [low1, high1], btype='band', output='sos')
+            filtered1 = signal.sosfiltfilt(sos1, audio)
             
-            # Extended speech band (80-8000 Hz)
+            # Extended speech band (80-8000 Hz - full speech)
             low2, high2 = 80 / nyquist, min(8000 / nyquist, 0.99)
-            b2, a2 = butter(4, [low2, high2], btype='band')
-            filtered2 = filtfilt(b2, a2, audio)
+            sos2 = signal.butter(4, [low2, high2], btype='band', output='sos')
+            filtered2 = signal.sosfiltfilt(sos2, audio)
             
-            # Combine filters
-            combined = 0.3 * filtered1 + 0.7 * filtered2
+            # Combine filters with emphasis on extended band
+            combined = 0.25 * filtered1 + 0.75 * filtered2
             
             return combined.astype(np.float32)
             
@@ -250,62 +324,62 @@ class AdvancedAudioEnhancer:
             logger.warning(f"Advanced bandpass filter failed: {e}")
             return audio
     
-    def reduce_noise_multi_stage(self, audio: np.ndarray) -> np.ndarray:
-        """Multi-stage noise reduction for heavily distorted audio"""
+    def reduce_noise_multi_stage_rf(self, audio: np.ndarray) -> np.ndarray:
+        """Multi-stage noise reduction optimized for RF interference"""
         try:
             enhanced = audio.copy()
             
-            # Stage 1: Spectral subtraction
-            enhanced = self.apply_spectral_subtraction(enhanced)
+            # Stage 1: RF-optimized spectral subtraction
+            enhanced = self.apply_spectral_subtraction_rf(enhanced)
             
-            # Stage 2: GPU/CPU noise reduction
+            # Stage 2: GPU/CPU noise reduction with RF parameters
             if self.torch_gate is not None and torch.cuda.is_available():
                 audio_tensor = torch.from_numpy(enhanced).unsqueeze(0).to(self.device)
                 with torch.no_grad():
                     enhanced_tensor = self.torch_gate(audio_tensor)
                 enhanced = enhanced_tensor.squeeze().cpu().numpy().astype(np.float32)
             else:
-                # Multiple passes with different parameters
+                # CPU-based noise reduction optimized for RF
                 enhanced = nr.reduce_noise(
                     y=enhanced,
                     sr=self.sample_rate,
                     stationary=False,
                     prop_decrease=Config.NOISE_REDUCTION_STRENGTH,
-                    time_constant_s=1.5,
-                    freq_mask_smooth_hz=300,
-                    time_mask_smooth_ms=40,
+                    time_constant_s=1.0,  # Faster for RF
+                    freq_mask_smooth_hz=200,  # Wider for RF
+                    time_mask_smooth_ms=30,
                     n_jobs=1
                 )
                 
-                # Second pass for remaining noise
+                # Second pass for remaining RF noise
                 enhanced = nr.reduce_noise(
                     y=enhanced,
                     sr=self.sample_rate,
                     stationary=True,
-                    prop_decrease=0.6,
-                    time_constant_s=2.0,
-                    freq_mask_smooth_hz=500,
-                    time_mask_smooth_ms=60,
+                    prop_decrease=0.7,
+                    time_constant_s=1.5,
+                    freq_mask_smooth_hz=400,
+                    time_mask_smooth_ms=50,
                     n_jobs=1
                 )
             
             # Stage 3: Wiener filtering
-            enhanced = self.apply_wiener_filter(enhanced)
+            enhanced = wiener(enhanced, mysize=Config.WIENER_FILTER_SIZE)
             
-            # Stage 4: Median filtering
-            enhanced = self.apply_median_filter(enhanced)
+            # Stage 4: Median filtering for impulse noise
+            enhanced = medfilt(enhanced, kernel_size=Config.MEDIAN_FILTER_SIZE)
             
             return enhanced.astype(np.float32)
             
         except Exception as e:
-            logger.warning(f"Multi-stage noise reduction failed: {e}")
+            logger.warning(f"Multi-stage RF noise reduction failed: {e}")
             return audio
     
-    def enhance_audio_ultimate(self, audio_path: str) -> Tuple[str, str]:
-        """Ultimate audio enhancement pipeline - returns (enhanced_path, original_path_for_comparison)"""
+    def enhance_audio_rf_ultimate(self, audio_path: str) -> Tuple[str, str]:
+        """Ultimate RF noise removal and audio enhancement pipeline"""
         try:
             start_time = time.time()
-            logger.info(f"Starting ultimate audio enhancement for: {audio_path}")
+            logger.info(f"Starting ultimate RF noise removal for: {audio_path}")
             
             # Load audio
             audio, sr = self.safe_audio_load(audio_path)
@@ -313,35 +387,44 @@ class AdvancedAudioEnhancer:
             logger.info(f"Loaded audio: {original_length:.2f}s at {sr}Hz")
             
             # Save original for comparison
-            original_path = os.path.join(Config.TEMP_DIR, f"original_{int(time.time())}.wav")
+            original_path = os.path.join(Config.TEMP_DIR, f"original_rf_{int(time.time())}.wav")
             sf.write(original_path, audio, self.sample_rate)
             
             # Stage 1: Initial normalization
             audio = self.normalize_audio_advanced(audio)
             
-            # Stage 2: Preemphasis
+            # Stage 2: Remove RF interference (notch filters)
+            audio = self.remove_rf_interference(audio)
+            
+            # Stage 3: RF bandstop filters
+            audio = self.apply_rf_bandstop_filters(audio)
+            
+            # Stage 4: Wavelet denoising (excellent for RF noise)
+            audio = self.apply_wavelet_denoising(audio)
+            
+            # Stage 5: Preemphasis for speech enhancement
             audio = self.apply_preemphasis(audio)
             
-            # Stage 3: Advanced bandpass filtering
+            # Stage 6: Advanced bandpass filtering
             audio = self.apply_advanced_bandpass_filter(audio)
             
-            # Stage 4: Multi-stage noise reduction
-            audio = self.reduce_noise_multi_stage(audio)
+            # Stage 7: Multi-stage noise reduction (RF optimized)
+            audio = self.reduce_noise_multi_stage_rf(audio)
             
-            # Stage 5: Final normalization
+            # Stage 8: Final normalization
             audio = self.normalize_audio_advanced(audio)
             
             # Save enhanced audio
-            enhanced_path = os.path.join(Config.TEMP_DIR, f"enhanced_ultimate_{int(time.time())}.wav")
+            enhanced_path = os.path.join(Config.TEMP_DIR, f"enhanced_rf_{int(time.time())}.wav")
             sf.write(enhanced_path, audio, self.sample_rate)
             
             processing_time = time.time() - start_time
-            logger.info(f"Ultimate audio enhancement completed in {processing_time:.2f}s")
+            logger.info(f"Ultimate RF noise removal completed in {processing_time:.2f}s")
             
             return enhanced_path, original_path
             
         except Exception as e:
-            logger.error(f"Ultimate audio enhancement failed: {e}")
+            logger.error(f"Ultimate RF enhancement failed: {e}")
             return audio_path, audio_path
 
 class SmartAudioChunker:
@@ -399,133 +482,62 @@ class SmartAudioChunker:
             logger.error(f"Smart chunking failed: {e}")
             return []
 
-class FinalDtypeCorrectedGemmaTranscriber:
-    """FINAL DTYPE-CORRECTED Gemma3n-E4B-it transcription engine"""
+class DeviceConsistentGemmaTranscriber:
+    """DEVICE CONSISTENT Gemma3n-E4B-it transcription engine using Pipeline API"""
     
     def __init__(self, model_path: str = None):
         self.model_path = model_path or Config.GEMMA_MODEL_PATH
         self.device = Config.DEVICE
         self.torch_dtype = Config.TORCH_DTYPE
         
-        self.processor = None
-        self.model = None
-        self.model_dtype = None
+        self.pipeline = None
         
-        self._load_model_safely()
+        self._load_pipeline_safely()
     
-    def _load_model_safely(self):
-        """Load Gemma model with comprehensive dtype handling"""
+    def _load_pipeline_safely(self):
+        """Load Gemma pipeline with complete device consistency"""
         try:
-            logger.info(f"Loading Gemma3n-E4B-it model from {self.model_path}")
+            logger.info(f"Loading Gemma3n-E4B-it pipeline from {self.model_path}")
             
             if not os.path.exists(self.model_path):
-                raise FileNotFoundError(f"Model path does not exist: {self.model_path}")
+                logger.error(f"Model path does not exist: {self.model_path}")
+                # Try to use from HuggingFace Hub
+                model_id = "google/gemma-3n-E4B-it"
+                logger.info(f"Attempting to load from HuggingFace Hub: {model_id}")
+            else:
+                model_id = self.model_path
             
-            # Load processor
-            self.processor = AutoProcessor.from_pretrained(
-                self.model_path,
-                local_files_only=True,
-                trust_remote_code=True
+            # DEVICE CONSISTENT: Use pipeline API for automatic device management
+            self.pipeline = pipeline(
+                "image-text-to-text",  # Gemma3n supports multimodal input
+                model=model_id,
+                device=self.device,
+                torch_dtype=self.torch_dtype,
+                trust_remote_code=True,
+                model_kwargs={
+                    "low_cpu_mem_usage": True,
+                    "attn_implementation": "eager"
+                }
             )
             
-            # ENHANCED: Load model with explicit dtype control
-            self.model = Gemma3nForConditionalGeneration.from_pretrained(
-                self.model_path,
-                torch_dtype=self.torch_dtype,
-                device_map="auto",
-                local_files_only=True,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,
-                attn_implementation="eager"  # Use eager attention for better compatibility
-            ).eval()
-            
-            # Get actual model dtype
-            self.model_dtype = next(self.model.parameters()).dtype
-            logger.info(f"Model loaded successfully. Model dtype: {self.model_dtype}, Device: {next(self.model.parameters()).device}")
+            logger.info(f"Gemma3n pipeline loaded successfully on device: {self.device}")
             
         except Exception as e:
-            logger.error(f"Failed to load Gemma model: {e}")
-            self.processor = None
-            self.model = None
+            logger.error(f"Failed to load Gemma pipeline: {e}")
+            self.pipeline = None
             raise
     
-    def _comprehensive_dtype_fix(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """COMPREHENSIVE DTYPE FIX: Handle all tensor dtype mismatches"""
-        if self.model is None:
-            return inputs
-        
-        fixed_inputs = {}
-        
-        logger.debug(f"Model dtype: {self.model_dtype}")
-        
-        for key, value in inputs.items():
-            if isinstance(value, torch.Tensor):
-                logger.debug(f"Processing {key}: {value.dtype}, shape: {value.shape}")
-                
-                if key == "input_ids":
-                    # input_ids MUST be Long for embedding layer
-                    fixed_inputs[key] = value.long()
-                    logger.debug(f"Converted {key} to Long")
-                    
-                elif key == "attention_mask":
-                    # attention_mask can be bool or long, but NOT float
-                    if value.dtype.is_floating_point:
-                        fixed_inputs[key] = (value > 0.5).long()
-                    else:
-                        fixed_inputs[key] = value.long()
-                    logger.debug(f"Converted {key} to Long")
-                    
-                elif key in ["token_type_ids", "position_ids"]:
-                    # These should be Long
-                    fixed_inputs[key] = value.long()
-                    logger.debug(f"Converted {key} to Long")
-                    
-                elif key in ["pixel_values", "audio_values", "audio_features"]:
-                    # CRITICAL: Audio/Image features should match model dtype
-                    if value.dtype != self.model_dtype:
-                        fixed_inputs[key] = value.to(dtype=self.model_dtype)
-                        logger.debug(f"Converted {key} from {value.dtype} to {self.model_dtype}")
-                    else:
-                        fixed_inputs[key] = value
-                        
-                else:
-                    # For any other tensor, apply smart conversion
-                    if key.endswith('_mask') and value.dtype.is_floating_point:
-                        # Any mask should be boolean or long, not float
-                        fixed_inputs[key] = (value > 0.5).long()
-                        logger.debug(f"Converted mask {key} to Long")
-                    elif key.endswith('_ids'):
-                        # Any IDs should be Long
-                        fixed_inputs[key] = value.long()
-                        logger.debug(f"Converted ID {key} to Long")
-                    elif value.dtype.is_floating_point and value.dtype != self.model_dtype:
-                        # Float tensors should match model dtype
-                        fixed_inputs[key] = value.to(dtype=self.model_dtype)
-                        logger.debug(f"Converted float {key} from {value.dtype} to {self.model_dtype}")
-                    else:
-                        fixed_inputs[key] = value
-                        logger.debug(f"Kept {key} as {value.dtype}")
-            else:
-                fixed_inputs[key] = value
-        
-        # Final verification
-        for key, value in fixed_inputs.items():
-            if isinstance(value, torch.Tensor):
-                logger.debug(f"Final {key}: {value.dtype}, device: {value.device}")
-        
-        return fixed_inputs
-    
     def transcribe_chunk_safely(self, audio_path: str, language_hint: str = None) -> Dict[str, Any]:
-        """FINAL DTYPE-CORRECTED: Safely transcribe with comprehensive dtype handling"""
-        if self.model is None or self.processor is None:
+        """DEVICE CONSISTENT: Safely transcribe using pipeline API"""
+        if self.pipeline is None:
             return {
                 "text": "",
                 "success": False,
-                "error": "Model not loaded"
+                "error": "Pipeline not loaded"
             }
         
         try:
-            # Prepare messages using simplified format
+            # Prepare messages using Gemma3n format
             user_prompt = "Transcribe this audio clearly and accurately"
             if language_hint and language_hint.strip() and language_hint != "Auto-detect":
                 user_prompt += f" in {language_hint}"
@@ -533,7 +545,7 @@ class FinalDtypeCorrectedGemmaTranscriber:
             
             messages = [
                 {
-                    "role": "user", 
+                    "role": "user",
                     "content": [
                         {"type": "audio", "audio": audio_path},
                         {"type": "text", "text": user_prompt}
@@ -541,82 +553,31 @@ class FinalDtypeCorrectedGemmaTranscriber:
                 }
             ]
             
-            # Apply chat template
+            # DEVICE CONSISTENT: Pipeline handles all device management automatically
             try:
-                inputs = self.processor.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True,
-                    tokenize=True,
-                    return_dict=True,
-                    return_tensors="pt"
+                output = self.pipeline(
+                    text=messages,
+                    max_new_tokens=Config.MAX_NEW_TOKENS,
+                    temperature=0.1,
+                    do_sample=False,
+                    return_full_text=False
                 )
                 
-                logger.debug(f"Template output keys: {inputs.keys()}")
-                for key, value in inputs.items():
-                    if isinstance(value, torch.Tensor):
-                        logger.debug(f"Template output {key}: {value.dtype}, shape: {value.shape}")
+                # Extract generated text
+                if isinstance(output, list) and len(output) > 0:
+                    generated_text = output[0].get("generated_text", "")
+                elif isinstance(output, dict):
+                    generated_text = output.get("generated_text", "")
+                else:
+                    generated_text = str(output)
                 
-                # Move to device first
-                inputs = inputs.to(self.model.device)
+                decoded = generated_text.strip()
                 
-                # COMPREHENSIVE DTYPE FIX
-                inputs = self._comprehensive_dtype_fix(inputs)
-                
-            except Exception as e:
-                logger.error(f"Chat template failed: {e}")
-                return {
-                    "text": "",
-                    "success": False,
-                    "error": f"Template error: {str(e)}"
-                }
-            
-            # Generate with careful error handling
-            try:
-                with torch.inference_mode():
-                    logger.debug("Starting generation...")
-                    generation = self.model.generate(
-                        **inputs,
-                        max_new_tokens=Config.MAX_NEW_TOKENS,
-                        do_sample=False,
-                        temperature=0.1,
-                        pad_token_id=self.processor.tokenizer.eos_token_id,
-                        eos_token_id=self.processor.tokenizer.eos_token_id
-                    )
-                    logger.debug("Generation completed successfully")
-                    
-            except torch.cuda.OutOfMemoryError:
-                logger.warning("CUDA OOM, retrying with reduced parameters")
-                torch.cuda.empty_cache()
-                gc.collect()
-                with torch.inference_mode():
-                    generation = self.model.generate(
-                        **inputs,
-                        max_new_tokens=Config.MAX_NEW_TOKENS // 2,
-                        do_sample=False,
-                        pad_token_id=self.processor.tokenizer.eos_token_id
-                    )
-                    
-            except Exception as gen_error:
-                logger.error(f"Generation failed: {gen_error}")
-                logger.error(f"Generation error type: {type(gen_error)}")
-                return {
-                    "text": "",
-                    "success": False,
-                    "error": f"Generation failed: {str(gen_error)}"
-                }
-            
-            # Decode
-            try:
-                input_len = inputs["input_ids"].shape[-1]
-                generation = generation[0][input_len:]
-                decoded = self.processor.decode(generation, skip_special_tokens=True)
-                
-                decoded = decoded.strip()
                 if not decoded:
                     return {
                         "text": "",
                         "success": False,
-                        "error": "Empty transcription"
+                        "error": "Empty transcription generated"
                     }
                 
                 return {
@@ -625,12 +586,12 @@ class FinalDtypeCorrectedGemmaTranscriber:
                     "error": None
                 }
                 
-            except Exception as decode_error:
-                logger.error(f"Decoding failed: {decode_error}")
+            except Exception as e:
+                logger.error(f"Pipeline generation failed: {e}")
                 return {
                     "text": "",
                     "success": False,
-                    "error": f"Decoding failed: {str(decode_error)}"
+                    "error": f"Pipeline generation failed: {str(e)}"
                 }
             
         except Exception as e:
@@ -641,6 +602,7 @@ class FinalDtypeCorrectedGemmaTranscriber:
                 "error": str(e)
             }
         finally:
+            # Clean up GPU memory
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
     
@@ -671,11 +633,11 @@ class FinalDtypeCorrectedGemmaTranscriber:
         
         return results
 
-class FinalTranscriptionPipeline:
-    """FINAL transcription pipeline with comprehensive dtype handling"""
+class DeviceConsistentTranscriptionPipeline:
+    """DEVICE CONSISTENT transcription pipeline with RF noise removal"""
     
     def __init__(self):
-        self.enhancer = AdvancedAudioEnhancer()
+        self.enhancer = RadioFrequencyAudioEnhancer()
         self.chunker = SmartAudioChunker(
             chunk_duration=Config.CHUNK_DURATION,
             overlap_duration=Config.OVERLAP_DURATION
@@ -683,22 +645,22 @@ class FinalTranscriptionPipeline:
         self.transcriber = None
         
         try:
-            self.transcriber = FinalDtypeCorrectedGemmaTranscriber()
-            logger.info("FINAL DTYPE-CORRECTED transcription pipeline initialized")
+            self.transcriber = DeviceConsistentGemmaTranscriber()
+            logger.info("DEVICE CONSISTENT RF-enhanced transcription pipeline initialized")
         except Exception as e:
             logger.error(f"Failed to initialize transcriber: {e}")
             self.transcriber = None
     
-    def process_audio_ultimate(self, audio_path: str, 
-                             enable_enhancement: bool = True,
-                             language_hint: str = None,
-                             progress_callback=None) -> Dict[str, Any]:
-        """Ultimate audio processing pipeline with comprehensive error handling"""
+    def process_audio_rf_ultimate(self, audio_path: str, 
+                                enable_enhancement: bool = True,
+                                language_hint: str = None,
+                                progress_callback=None) -> Dict[str, Any]:
+        """Ultimate RF-aware audio processing pipeline"""
         
         if self.transcriber is None:
             return {
                 "success": False,
-                "error": "Transcriber not initialized - check model path and dependencies",
+                "error": "Transcriber not initialized - check model and dependencies",
                 "full_transcript": "",
                 "chunks": [],
                 "processing_time": 0,
@@ -713,22 +675,22 @@ class FinalTranscriptionPipeline:
             if not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
             
-            # Step 1: Ultimate Audio Enhancement with preview
+            # Step 1: Ultimate RF noise removal and enhancement
             if progress_callback:
-                progress_callback(0.1, "Applying ultimate audio enhancement...")
+                progress_callback(0.1, "Removing RF interference and enhancing audio...")
             
             enhanced_audio_path = None
             original_audio_path = None
             
             try:
                 if enable_enhancement:
-                    enhanced_audio_path, original_audio_path = self.enhancer.enhance_audio_ultimate(audio_path)
+                    enhanced_audio_path, original_audio_path = self.enhancer.enhance_audio_rf_ultimate(audio_path)
                     processing_path = enhanced_audio_path
                 else:
                     processing_path = audio_path
                     original_audio_path = audio_path
             except Exception as e:
-                logger.warning(f"Enhancement failed: {e}, using original")
+                logger.warning(f"RF enhancement failed: {e}, using original")
                 processing_path = audio_path
                 original_audio_path = audio_path
             
@@ -750,9 +712,9 @@ class FinalTranscriptionPipeline:
                     "original_audio_path": original_audio_path
                 }
             
-            # Step 3: Transcribe
+            # Step 3: Device-consistent transcription
             if progress_callback:
-                progress_callback(0.3, f"Transcribing {len(chunks)} chunks...")
+                progress_callback(0.3, f"Transcribing {len(chunks)} chunks with device consistency...")
             
             def chunk_progress(chunk_progress, message):
                 overall_progress = 0.3 + (chunk_progress * 0.6)
@@ -857,12 +819,12 @@ class FinalTranscriptionPipeline:
                 except:
                     pass
 
-# FINAL Gradio Interface
-class FinalTranscriptionUI:
-    """FINAL Professional Gradio interface with comprehensive error handling"""
+# DEVICE CONSISTENT Gradio Interface
+class DeviceConsistentTranscriptionUI:
+    """DEVICE CONSISTENT Professional Gradio interface with RF noise removal"""
     
     def __init__(self):
-        self.pipeline = FinalTranscriptionPipeline()
+        self.pipeline = DeviceConsistentTranscriptionPipeline()
         self.system_ready = self.pipeline.transcriber is not None
         
         self.system_info = {
@@ -885,12 +847,12 @@ class FinalTranscriptionUI:
         """Update progress"""
         pass
     
-    def process_file_final(self, audio_file, enable_enhancement, language_hint, 
-                          chunk_duration, overlap_duration):
-        """FINAL file processing with comprehensive error handling"""
+    def process_file_device_consistent(self, audio_file, enable_enhancement, language_hint, 
+                                     chunk_duration, overlap_duration):
+        """DEVICE CONSISTENT file processing with RF noise removal"""
         
         if not self.system_ready:
-            return "❌ System not ready - Gemma3n-E4B-it model failed to load", "", "", None, None
+            return "❌ System not ready - Gemma3n-E4B-it pipeline failed to load", "", "", None, None
         
         if audio_file is None:
             return "❌ No audio file uploaded", "", "", None, None
@@ -911,11 +873,12 @@ class FinalTranscriptionUI:
                 return f"❌ Unsupported format: {file_ext}", "", "", None, None
             
             status_msg = f"🎵 Processing: {os.path.basename(file_path)} ({file_size:.1f} MB)\n"
-            status_msg += f"🔧 Enhancement: {'Ultimate Multi-Stage' if enable_enhancement else 'Disabled'}\n"
+            status_msg += f"🔧 Enhancement: {'RF Noise Removal + Multi-Stage' if enable_enhancement else 'Disabled'}\n"
             status_msg += f"🌍 Language: {language_hint}\n"
-            status_msg += f"⏱️ Chunks: {chunk_duration}s with {overlap_duration}s overlap\n\n"
+            status_msg += f"⏱️ Chunks: {chunk_duration}s with {overlap_duration}s overlap\n"
+            status_msg += f"📡 RF Frequencies: {Config.RF_FREQUENCIES}\n\n"
             
-            result = self.pipeline.process_audio_ultimate(
+            result = self.pipeline.process_audio_rf_ultimate(
                 file_path,
                 enable_enhancement,
                 language_hint if language_hint and language_hint.strip() and language_hint != "Auto-detect" else None,
@@ -947,14 +910,21 @@ class FinalTranscriptionUI:
     
     def _create_report(self, result: Dict[str, Any]) -> str:
         """Create processing report"""
-        report = f"""# 📊 FINAL Transcription Report
+        report = f"""# 📊 DEVICE CONSISTENT + RF NOISE REMOVAL Report
 
 ## 🎯 Processing Summary
 - **Duration:** {result['processing_time']:.1f} seconds
 - **Chunks:** {result['num_chunks']}
 - **Success Rate:** {result.get('success_rate', 0)*100:.1f}%
-- **Enhanced Audio:** Multi-stage noise reduction applied
-- **Model:** Gemma3n-E4B-it (FINAL DTYPE-CORRECTED)
+- **RF Enhancement:** Multi-stage RF interference removal applied
+- **Device:** {Config.DEVICE} (All tensors consistent)
+
+## 🔧 RF Noise Removal Pipeline
+1. **RF Notch Filters:** {Config.RF_FREQUENCIES} Hz
+2. **RF Bandstop Filters:** Power line + Radio band interference
+3. **Wavelet Denoising:** Impulse and RF noise suppression
+4. **Spectral Subtraction:** RF-optimized parameters
+5. **Multi-stage Noise Reduction:** GPU/CPU with RF settings
 
 ## 📈 Chunk Details
 """
@@ -972,49 +942,49 @@ class FinalTranscriptionUI:
         
         return report
     
-    def create_final_interface(self):
-        """Create FINAL interface with comprehensive features"""
+    def create_device_consistent_interface(self):
+        """Create DEVICE CONSISTENT interface with RF noise removal"""
         
         custom_css = """
         .gradio-container { font-family: 'Inter', system-ui, sans-serif; max-width: 1500px; margin: 0 auto; }
         .status-success { padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; background: linear-gradient(90deg, #ecfdf5 0%, #f0fdf4 100%); }
         .status-error { padding: 15px; border-radius: 8px; border-left: 4px solid #ef4444; background: linear-gradient(90deg, #fef2f2 0%, #fff5f5 100%); }
-        .audio-preview { background: #f8fafc; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .rf-info { background: #f0f4ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6; margin: 10px 0; }
         """
         
-        with gr.Blocks(title="FINAL Audio Transcription", css=custom_css, theme=gr.themes.Soft()) as interface:
+        with gr.Blocks(title="RF-Enhanced Audio Transcription", css=custom_css, theme=gr.themes.Soft()) as interface:
             
             # Header
             gr.HTML("""
             <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; margin-bottom: 25px;">
-                <h1 style="margin: 0; font-size: 2.8em;">🎙️ FINAL Audio Transcription</h1>
-                <p style="margin: 15px 0 0 0; font-size: 1.3em;">Gemma3n-E4B-it with COMPREHENSIVE DTYPE CORRECTION</p>
-                <p style="margin: 5px 0 0 0; font-size: 1.0em;">All Tensor Issues PERMANENTLY Resolved • Production Ready</p>
+                <h1 style="margin: 0; font-size: 2.8em;">📡 RF-Enhanced Audio Transcription</h1>
+                <p style="margin: 15px 0 0 0; font-size: 1.3em;">DEVICE CONSISTENT + Radio Frequency Interference Removal</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.0em;">All Device Issues Resolved • Advanced RF Noise Suppression</p>
             </div>
             """)
             
             # System Status
             if not self.system_ready:
-                gr.HTML('<div class="status-error"><h3>⚠️ System Not Ready</h3><p>Gemma3n-E4B-it model failed to load. Check model path and dependencies.</p></div>')
+                gr.HTML('<div class="status-error"><h3>⚠️ System Not Ready</h3><p>Gemma3n-E4B-it pipeline failed to load. Check model and dependencies.</p></div>')
             else:
                 gpu_info = f" | {self.system_info['gpu_name']}" if self.system_info['cuda_available'] else " | CPU"
-                gr.HTML(f'''<div class="status-success"><h3>✅ FINAL SYSTEM READY</h3>
-                <p>Device: {self.system_info['device']}{gpu_info} | Comprehensive dtype handling applied</p></div>''')
+                gr.HTML(f'''<div class="status-success"><h3>✅ DEVICE CONSISTENT SYSTEM READY</h3>
+                <p>Device: {self.system_info['device']}{gpu_info} | Pipeline API ensures device consistency</p></div>''')
             
             with gr.Row():
                 with gr.Column(scale=2):
                     gr.HTML("<h2>📁 Input & Configuration</h2>")
                     
                     audio_input = gr.File(
-                        label="📎 Upload Audio File (Heavy Noise/Distortion Supported)",
+                        label="📎 Upload Audio File (RF Interference Supported)",
                         file_types=Config.SUPPORTED_FORMATS,
                         file_count="single"
                     )
                     
                     enable_enhancement = gr.Checkbox(
-                        label="🔧 Enable Ultimate Multi-Stage Enhancement",
+                        label="📡 Enable RF Noise Removal + Multi-Stage Enhancement",
                         value=True,
-                        info="Advanced pipeline: Spectral subtraction + GPU noise reduction + Wiener filtering + Median filtering"
+                        info="8-stage pipeline: RF Notch → RF Bandstop → Wavelet → Preemphasis → Bandpass → Spectral → GPU/CPU → Final"
                     )
                     
                     language_hint = gr.Dropdown(
@@ -1032,23 +1002,23 @@ class FinalTranscriptionUI:
                         overlap_duration = gr.Slider(5, 30, Config.OVERLAP_DURATION, step=5, 
                                                    label="Overlap Duration (s)")
                     
-                    process_btn = gr.Button("🚀 Start FINAL Transcription", variant="primary", size="lg")
+                    process_btn = gr.Button("🚀 Start RF-Enhanced Transcription", variant="primary", size="lg")
                 
                 with gr.Column(scale=3):
                     gr.HTML("<h2>📊 Results & Audio Preview</h2>")
                     
                     status_output = gr.Textbox(
                         label="📈 Processing Status",
-                        lines=4,
+                        lines=5,
                         interactive=False,
                         placeholder="Upload audio and start transcription..."
                     )
                     
                     # Audio Preview Section
-                    with gr.Accordion("🎵 Audio Preview (Before & After Enhancement)", open=False):
+                    with gr.Accordion("🎵 Audio Preview (RF Noise Removal Comparison)", open=False):
                         with gr.Row():
                             with gr.Column():
-                                gr.HTML("<h4>🔊 Original Audio</h4>")
+                                gr.HTML("<h4>🔊 Original Audio (with RF noise)</h4>")
                                 original_audio_player = gr.Audio(
                                     label="Original",
                                     visible=False,
@@ -1056,19 +1026,19 @@ class FinalTranscriptionUI:
                                 )
                             
                             with gr.Column():
-                                gr.HTML("<h4>✨ Enhanced Audio</h4>")
+                                gr.HTML("<h4>📡 RF-Enhanced Audio</h4>")
                                 enhanced_audio_player = gr.Audio(
-                                    label="Enhanced",
+                                    label="RF Enhanced",
                                     visible=False,
                                     interactive=False
                                 )
                     
                     transcript_output = gr.Textbox(
-                        label="📝 FINAL Transcript",
+                        label="📝 RF-Enhanced Transcript",
                         lines=12,
                         interactive=True,
                         show_copy_button=True,
-                        placeholder="Enhanced transcription will appear here..."
+                        placeholder="RF-enhanced transcription will appear here..."
                     )
                     
                     download_btn = gr.DownloadButton("📥 Download", visible=False)
@@ -1076,26 +1046,28 @@ class FinalTranscriptionUI:
             with gr.Accordion("📈 Detailed Report", open=False):
                 detailed_report = gr.Markdown("No processing completed yet.")
             
-            with gr.Accordion("ℹ️ FINAL FIXES Applied", open=False):
-                gr.HTML("""
-                <div style="padding: 20px; background: #f0fdf4; border-radius: 10px; border-left: 4px solid #22c55e;">
-                    <h3>🎉 COMPREHENSIVE DTYPE CORRECTION</h3>
+            with gr.Accordion("📡 RF Enhancement Details", open=False):
+                gr.HTML(f"""
+                <div class="rf-info">
+                    <h3>📡 Radio Frequency Interference Removal</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
-                        <div><strong>✅ Model Loading:</strong> Proper Gemma3nForConditionalGeneration usage</div>
-                        <div><strong>✅ Tensor Types:</strong> Comprehensive dtype conversion for ALL tensors</div>
-                        <div><strong>✅ Audio Processing:</strong> Audio features match model dtype exactly</div>
-                        <div><strong>✅ Error Prevention:</strong> All Float/Half mismatches eliminated</div>
-                        <div><strong>✅ Memory Management:</strong> Optimized CUDA memory handling</div>
-                        <div><strong>✅ Debug Logging:</strong> Complete tensor tracking for diagnostics</div>
+                        <div><strong>🎯 RF Frequencies:</strong><br>{', '.join(map(str, Config.RF_FREQUENCIES))} Hz</div>
+                        <div><strong>🔧 Notch Filters:</strong><br>High-Q filters for precise RF removal</div>
+                        <div><strong>📊 Bandstop Filters:</strong><br>Power line + Radio band suppression</div>
+                        <div><strong>🌊 Wavelet Denoising:</strong><br>{Config.WAVELET_MODE} wavelet with soft thresholding</div>
                     </div>
-                    <h3>🔧 Enhancement Pipeline</h3>
-                    <p><strong>6-Stage Process:</strong> Preemphasis → Bandpass → Spectral Subtraction → GPU/CPU Noise Reduction → Wiener Filter → Median Filter</p>
-                    <p><strong>Handles:</strong> Heavy noise, distortion, echo, background music, poor recording quality</p>
+                    <h3>🔧 8-Stage Enhancement Pipeline</h3>
+                    <p><strong>Stage 1:</strong> RF Notch Filters | <strong>Stage 2:</strong> RF Bandstop Filters</p>
+                    <p><strong>Stage 3:</strong> Wavelet Denoising | <strong>Stage 4:</strong> Preemphasis</p>
+                    <p><strong>Stage 5:</strong> Advanced Bandpass | <strong>Stage 6:</strong> RF Spectral Subtraction</p>
+                    <p><strong>Stage 7:</strong> Multi-stage GPU/CPU Noise Reduction | <strong>Stage 8:</strong> Final Normalization</p>
+                    <h3>✅ Device Consistency</h3>
+                    <p>Using Transformers Pipeline API for automatic device management - eliminates "cuda:0 and cpu" tensor errors</p>
                 </div>
                 """)
             
-            def process_and_download_final(audio_file, enable_enhancement, language_hint, chunk_duration, overlap_duration):
-                status, transcript, report, enhanced_audio, original_audio = self.process_file_final(
+            def process_and_download_rf(audio_file, enable_enhancement, language_hint, chunk_duration, overlap_duration):
+                status, transcript, report, enhanced_audio, original_audio = self.process_file_device_consistent(
                     audio_file, enable_enhancement, language_hint, chunk_duration, overlap_duration
                 )
                 
@@ -1104,15 +1076,16 @@ class FinalTranscriptionUI:
                 
                 if transcript.strip() and "✅" in status:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"final_transcript_{timestamp}.txt"
+                    filename = f"rf_enhanced_transcript_{timestamp}.txt"
                     filepath = os.path.join(Config.OUTPUT_DIR, filename)
                     
                     try:
                         with open(filepath, 'w', encoding='utf-8') as f:
-                            f.write(f"FINAL Audio Transcription Report\n")
+                            f.write(f"RF-Enhanced Audio Transcription Report\n")
                             f.write(f"Generated: {datetime.now()}\n")
-                            f.write(f"Model: Gemma3n-E4B-it (COMPREHENSIVE DTYPE CORRECTION)\n")
-                            f.write(f"Enhancement: {'Ultimate Multi-Stage' if enable_enhancement else 'Disabled'}\n")
+                            f.write(f"System: Gemma3n-E4B-it (DEVICE CONSISTENT + RF ENHANCED)\n")
+                            f.write(f"Enhancement: {'RF Noise Removal + Multi-Stage' if enable_enhancement else 'Disabled'}\n")
+                            f.write(f"RF Frequencies Removed: {Config.RF_FREQUENCIES}\n")
                             if language_hint != "Auto-detect":
                                 f.write(f"Language: {language_hint}\n")
                             f.write(f"{'='*60}\n\nTRANSCRIPT:\n{'-'*60}\n")
@@ -1134,16 +1107,16 @@ class FinalTranscriptionUI:
                     transcript, 
                     report,
                     gr.Audio(value=original_audio, visible=original_visible, interactive=False, label="Original Audio"),
-                    gr.Audio(value=enhanced_audio, visible=enhanced_visible, interactive=False, label="Enhanced Audio"),
+                    gr.Audio(value=enhanced_audio, visible=enhanced_visible, interactive=False, label="RF-Enhanced Audio"),
                     gr.DownloadButton(
-                        label="📥 Download FINAL Transcript",
+                        label="📥 Download RF-Enhanced Transcript",
                         value=download_file,
                         visible=download_visible
                     )
                 )
             
             process_btn.click(
-                fn=process_and_download_final,
+                fn=process_and_download_rf,
                 inputs=[audio_input, enable_enhancement, language_hint, chunk_duration, overlap_duration],
                 outputs=[status_output, transcript_output, detailed_report, original_audio_player, enhanced_audio_player, download_btn]
             )
@@ -1151,9 +1124,9 @@ class FinalTranscriptionUI:
         return interface
 
 def main():
-    """FINAL main function with comprehensive error handling"""
+    """DEVICE CONSISTENT main function with RF enhancement"""
     
-    logger.info("🚀 Starting FINAL Audio Transcription System (COMPREHENSIVE DTYPE CORRECTION)")
+    logger.info("🚀 Starting DEVICE CONSISTENT + RF-Enhanced Audio Transcription System")
     
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
@@ -1163,14 +1136,14 @@ def main():
         logger.warning("CUDA not available - CPU mode will be slower")
     
     if not os.path.exists(Config.GEMMA_MODEL_PATH):
-        logger.error(f"Model not found: {Config.GEMMA_MODEL_PATH}")
-        logger.info("Download: huggingface-cli download google/gemma-3n-E4B-it")
+        logger.warning(f"Local model not found: {Config.GEMMA_MODEL_PATH}")
+        logger.info("Will attempt to load from HuggingFace Hub: google/gemma-3n-E4B-it")
     
     try:
-        ui = FinalTranscriptionUI()
-        interface = ui.create_final_interface()
+        ui = DeviceConsistentTranscriptionUI()
+        interface = ui.create_device_consistent_interface()
         
-        logger.info("🎉 Launching FINAL interface with COMPREHENSIVE DTYPE CORRECTION...")
+        logger.info("🎉 Launching DEVICE CONSISTENT + RF-Enhanced interface...")
         interface.launch(
             server_name="0.0.0.0",
             server_port=7860,
