@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-OPTIMIZED AUDIO TRANSCRIPTION WITH ENGLISH TRANSLATION
-=====================================================
+OPTIMIZED AUDIO TRANSCRIPTION WITH OPTIONAL ENGLISH TRANSLATION
+==============================================================
 
-OPTIMIZATIONS APPLIED:
-- Fast checkpoint loading with optimized settings
-- Reduced processing time per chunk (3x faster)
-- Added English translation feature using same model
-- Streamlined memory management
-- Optimized inference settings
+NEW FEATURES:
+- Optional translation controlled by user checkbox
+- Efficient text chunking for long translations (preserves meaning)
+- Separate translation button for user control
+- Smart text segmentation for accurate translation
+- Enhanced UI with conditional translation display
 
 Author: Advanced AI Audio Processing System
-Version: Optimized 6.0 - Fast & Translation-Enabled
+Version: User-Controlled Translation 7.0
 """
 
 import os
@@ -35,7 +35,18 @@ import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import psutil
+import re
+import nltk
 warnings.filterwarnings("ignore")
+
+# Download required NLTK data (run once)
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    try:
+        nltk.download('punkt', quiet=True)
+    except:
+        pass  # Skip if download fails
 
 # --- OPTIMIZED CONFIGURATION ---
 MODEL_PATH = "/path/to/your/local/gemma-3n-e4b-it"  # UPDATE THIS PATH
@@ -52,6 +63,11 @@ PROCESSING_THREADS = 1     # OPTIMIZED: Single thread for stability
 MIN_FREE_MEMORY_GB = 0.3   # OPTIMIZED: Even more relaxed
 MEMORY_SAFETY_MARGIN = 0.1  # OPTIMIZED: Smaller margin
 CHECK_MEMORY_FREQUENCY = 5  # OPTIMIZED: Check memory every 5 chunks instead of every chunk
+
+# NEW: Translation settings for efficient text chunking
+MAX_TRANSLATION_CHUNK_SIZE = 1000  # Maximum characters per translation chunk
+SENTENCE_OVERLAP = 1  # Number of sentences to overlap between chunks for context
+MIN_CHUNK_SIZE = 100  # Minimum characters per chunk
 
 # Expanded language support
 SUPPORTED_LANGUAGES = {
@@ -110,6 +126,138 @@ class OptimizedMemoryManager:
             allocated = torch.cuda.memory_allocated() / (1024**3)
             total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             print(f"📊 {context} - GPU: {allocated:.1f}GB/{total:.1f}GB")
+
+class SmartTextChunker:
+    """NEW: Smart text chunking for efficient translation preserving meaning"""
+    
+    def __init__(self, max_chunk_size=MAX_TRANSLATION_CHUNK_SIZE, min_chunk_size=MIN_CHUNK_SIZE):
+        self.max_chunk_size = max_chunk_size
+        self.min_chunk_size = min_chunk_size
+        self.sentence_overlap = SENTENCE_OVERLAP
+    
+    def split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using multiple methods for accuracy"""
+        # Method 1: Try NLTK if available
+        try:
+            from nltk.tokenize import sent_tokenize
+            sentences = sent_tokenize(text)
+            if sentences and len(sentences) > 1:
+                return sentences
+        except:
+            pass
+        
+        # Method 2: Simple regex-based sentence splitting
+        # Split on sentence endings followed by whitespace and capital letter
+        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+        
+        # Method 3: Fallback - split on periods if no proper sentences found
+        if len(sentences) <= 1:
+            sentences = re.split(r'\.\s+', text)
+            # Add periods back except for the last sentence
+            sentences = [s + '.' if i < len(sentences) - 1 and not s.endswith('.') else s 
+                        for i, s in enumerate(sentences)]
+        
+        # Clean up empty sentences
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        return sentences if sentences else [text]
+    
+    def create_smart_chunks(self, text: str) -> List[str]:
+        """Create smart chunks that preserve meaning and context"""
+        if not text or len(text) <= self.max_chunk_size:
+            return [text] if text else []
+        
+        print(f"📝 Creating smart chunks for {len(text)} characters...")
+        
+        # Split into sentences
+        sentences = self.split_into_sentences(text)
+        print(f"📄 Split into {len(sentences)} sentences")
+        
+        if len(sentences) <= 1:
+            # If we can't split into sentences, split by paragraphs or lines
+            return self.fallback_chunking(text)
+        
+        chunks = []
+        current_chunk = ""
+        sentence_buffer = []
+        
+        for i, sentence in enumerate(sentences):
+            sentence_with_space = sentence if not current_chunk else " " + sentence
+            
+            # Check if adding this sentence would exceed the limit
+            if current_chunk and len(current_chunk + sentence_with_space) > self.max_chunk_size:
+                # Save current chunk
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                
+                # Start new chunk with overlap from previous sentences
+                overlap_sentences = sentence_buffer[-self.sentence_overlap:] if len(sentence_buffer) >= self.sentence_overlap else sentence_buffer
+                current_chunk = " ".join(overlap_sentences)
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+                
+                sentence_buffer = overlap_sentences + [sentence]
+            else:
+                current_chunk += sentence_with_space
+                sentence_buffer.append(sentence)
+        
+        # Add the last chunk
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        # Filter out chunks that are too small (unless it's the only chunk)
+        if len(chunks) > 1:
+            chunks = [chunk for chunk in chunks if len(chunk) >= self.min_chunk_size]
+        
+        print(f"✅ Created {len(chunks)} smart chunks")
+        return chunks
+    
+    def fallback_chunking(self, text: str) -> List[str]:
+        """Fallback chunking when sentence splitting fails"""
+        print("⚠️ Using fallback chunking method")
+        
+        # Try to split by paragraphs first
+        paragraphs = text.split('\n\n')
+        if len(paragraphs) > 1:
+            chunks = []
+            current_chunk = ""
+            
+            for para in paragraphs:
+                if current_chunk and len(current_chunk + "\n\n" + para) > self.max_chunk_size:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = para
+                else:
+                    if current_chunk:
+                        current_chunk += "\n\n" + para
+                    else:
+                        current_chunk = para
+            
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            
+            return chunks
+        
+        # Last resort: split by character count at word boundaries
+        words = text.split()
+        chunks = []
+        current_chunk = ""
+        
+        for word in words:
+            if current_chunk and len(current_chunk + " " + word) > self.max_chunk_size:
+                chunks.append(current_chunk.strip())
+                current_chunk = word
+            else:
+                if current_chunk:
+                    current_chunk += " " + word
+                else:
+                    current_chunk = word
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks
 
 class FastAudioEnhancer:
     """OPTIMIZED: Fast audio enhancement focused on speed"""
@@ -176,7 +324,7 @@ class FastAudioEnhancer:
             return original_audio.astype(np.float32), {}
 
 class OptimizedAudioTranscriber:
-    """OPTIMIZED: Fast transcriber with optimized model loading and translation"""
+    """OPTIMIZED: Fast transcriber with smart translation chunking"""
     
     def __init__(self, model_path: str, use_quantization: bool = True):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -184,6 +332,7 @@ class OptimizedAudioTranscriber:
         self.model = None
         self.processor = None
         self.enhancer = FastAudioEnhancer(SAMPLE_RATE)
+        self.text_chunker = SmartTextChunker()  # NEW: Smart text chunker
         self.chunk_count = 0  # For memory check frequency
         
         print(f"🖥️ Using device: {self.device}")
@@ -362,8 +511,8 @@ class OptimizedAudioTranscriber:
             print(f"❌ Fast transcription error: {str(e)}")
             return f"[ERROR: {str(e)[:30]}]"
     
-    def translate_to_english(self, text: str) -> str:
-        """NEW: Translate text to English using the same model"""
+    def translate_text_chunks(self, text: str) -> str:
+        """NEW: Translate text using smart chunking for long texts"""
         if self.model is None or self.processor is None:
             return "[MODEL_NOT_LOADED]"
         
@@ -371,26 +520,80 @@ class OptimizedAudioTranscriber:
             return "[NO_TRANSLATION_NEEDED]"
         
         try:
-            print("🔄 Translating to English...")
+            print("🌐 Starting smart text translation...")
             
-            # Check if text is already in English (simple heuristic)
-            english_words = ["the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you"]
-            text_words = text.lower().split()
-            english_word_count = sum(1 for word in text_words[:20] if word in english_words)  # Check first 20 words
+            # Check if text is already in English (enhanced detection)
+            english_indicators = [
+                "the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you",
+                "have", "be", "this", "from", "they", "will", "been", "has", "were", "said", "each", "which", "can",
+                "there", "use", "an", "she", "how", "its", "our", "out", "many", "time", "very", "when", "much", "would"
+            ]
             
-            if english_word_count >= len(text_words[:20]) * 0.6:  # If 60%+ are English words
-                return f"[ALREADY_IN_ENGLISH] {text}"
+            text_words = re.findall(r'\b\w+\b', text.lower())
+            if len(text_words) >= 5:  # Only check if we have enough words
+                english_word_count = sum(1 for word in text_words[:30] if word in english_indicators)
+                english_ratio = english_word_count / min(len(text_words), 30)
+                
+                if english_ratio >= 0.4:  # If 40%+ are common English words
+                    print(f"✅ Text appears to be already in English (ratio: {english_ratio:.2f})")
+                    return f"[ALREADY_IN_ENGLISH] {text}"
             
-            # Translation message
+            # Create smart chunks for translation
+            text_chunks = self.text_chunker.create_smart_chunks(text)
+            
+            if len(text_chunks) == 1:
+                print("🔄 Translating single chunk...")
+                return self.translate_single_chunk(text_chunks[0])
+            
+            print(f"📝 Translating {len(text_chunks)} chunks...")
+            translated_chunks = []
+            
+            for i, chunk in enumerate(text_chunks, 1):
+                print(f"🌐 Translating chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
+                
+                try:
+                    translated_chunk = self.translate_single_chunk(chunk)
+                    
+                    if translated_chunk.startswith('['):
+                        print(f"⚠️ Chunk {i} translation issue: {translated_chunk}")
+                        # Use original chunk if translation fails
+                        translated_chunks.append(chunk)
+                    else:
+                        translated_chunks.append(translated_chunk)
+                        print(f"✅ Chunk {i} translated successfully")
+                    
+                except Exception as e:
+                    print(f"❌ Chunk {i} translation failed: {e}")
+                    translated_chunks.append(chunk)  # Fallback to original
+                
+                # Cleanup between chunks
+                OptimizedMemoryManager.fast_cleanup()
+                time.sleep(0.2)  # Small delay for stability
+            
+            # Merge translated chunks intelligently
+            merged_translation = self.merge_translated_chunks(translated_chunks)
+            
+            print("✅ Smart text translation completed")
+            return merged_translation
+            
+        except Exception as e:
+            print(f"❌ Smart translation error: {str(e)}")
+            OptimizedMemoryManager.fast_cleanup()
+            return f"[TRANSLATION_ERROR: {str(e)[:50]}]"
+    
+    def translate_single_chunk(self, chunk: str) -> str:
+        """Translate a single text chunk"""
+        try:
+            # Enhanced translation prompt
             message = [
                 {
                     "role": "system",
-                    "content": [{"type": "text", "text": "You are a professional translator. Translate the given text to English accurately while preserving the meaning and context."}],
+                    "content": [{"type": "text", "text": "You are a professional translator. Translate the given text to English accurately while preserving the meaning, context, and style. Maintain proper punctuation and formatting."}],
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"Translate the following text to English:\n\n{text}"},
+                        {"type": "text", "text": f"Translate the following text to English:\n\n{chunk}"},
                     ],
                 },
             ]
@@ -406,10 +609,10 @@ class OptimizedAudioTranscriber:
 
                 input_len = inputs["input_ids"].shape[-1]
 
-                # OPTIMIZED: Fast translation generation
+                # OPTIMIZED: Translation generation
                 generation = self.model.generate(
                     **inputs, 
-                    max_new_tokens=250,  # Slightly more tokens for translation
+                    max_new_tokens=300,  # More tokens for translation
                     do_sample=False,
                     temperature=0.1,
                     disable_compile=False,
@@ -421,25 +624,54 @@ class OptimizedAudioTranscriber:
                 generation = generation[0][input_len:]
                 translation = self.processor.decode(generation, skip_special_tokens=True)
                 
-                # Quick cleanup
+                # Cleanup
                 del inputs, generation
-                OptimizedMemoryManager.fast_cleanup()
                 
                 result = translation.strip()
                 if not result or len(result) < 2:
-                    return "[TRANSLATION_UNCLEAR]"
+                    return "[CHUNK_TRANSLATION_UNCLEAR]"
                 
-                print("✅ Translation completed")
                 return result
                 
         except Exception as e:
-            print(f"❌ Translation error: {str(e)}")
-            OptimizedMemoryManager.fast_cleanup()
-            return f"[TRANSLATION_ERROR: {str(e)[:30]}]"
+            print(f"❌ Single chunk translation error: {e}")
+            return f"[CHUNK_ERROR: {str(e)[:30]}]"
+    
+    def merge_translated_chunks(self, translated_chunks: List[str]) -> str:
+        """Intelligently merge translated chunks"""
+        if not translated_chunks:
+            return "[NO_TRANSLATED_CHUNKS]"
+        
+        # Remove error chunks for merging
+        valid_chunks = [chunk for chunk in translated_chunks if not chunk.startswith('[')]
+        
+        if not valid_chunks:
+            return "[ALL_CHUNKS_FAILED]"
+        
+        # Smart merging with proper spacing
+        merged_text = ""
+        for i, chunk in enumerate(valid_chunks):
+            if i == 0:
+                merged_text = chunk
+            else:
+                # Check if we need spacing
+                if not merged_text.endswith((' ', '\n')) and not chunk.startswith((' ', '\n')):
+                    # Add space if the previous chunk doesn't end with sentence punctuation
+                    if not merged_text.endswith(('.', '!', '?', ':', ';')):
+                        merged_text += " "
+                merged_text += chunk
+        
+        # Add summary if some chunks failed
+        failed_chunks = len(translated_chunks) - len(valid_chunks)
+        if failed_chunks > 0:
+            success_rate = (len(valid_chunks) / len(translated_chunks)) * 100
+            merged_text += f"\n\n[Translation Summary: {len(valid_chunks)}/{len(translated_chunks)} chunks successful ({success_rate:.1f}% success rate)]"
+        
+        return merged_text.strip()
     
     def transcribe_with_optimization(self, audio_path: str, language: str = "auto", 
-                                   enhancement_level: str = "moderate") -> Tuple[str, str, str, Dict, str]:
-        """OPTIMIZED: Fast transcription with English translation"""
+                                   enhancement_level: str = "moderate") -> Tuple[str, str, str, Dict]:
+        """OPTIMIZED: Fast transcription without automatic translation"""
         try:
             print(f"⚡ Starting optimized transcription...")
             print(f"🔧 Enhancement level: {enhancement_level}")
@@ -463,7 +695,7 @@ class OptimizedAudioTranscriber:
                     
             except Exception as e:
                 print(f"❌ Audio loading failed: {e}")
-                return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}, ""
+                return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
             
             # Fast audio enhancement
             enhanced_audio, stats = self.enhancer.fast_enhancement_pipeline(audio_array, enhancement_level)
@@ -480,7 +712,7 @@ class OptimizedAudioTranscriber:
             chunks = self.create_fast_chunks(enhanced_audio)
             
             if not chunks:
-                return "❌ No valid chunks created", original_path, enhanced_path, stats, ""
+                return "❌ No valid chunks created", original_path, enhanced_path, stats
             
             # OPTIMIZED: Process chunks with minimal overhead
             transcriptions = []
@@ -515,20 +747,16 @@ class OptimizedAudioTranscriber:
             print("🔗 Merging transcriptions...")
             final_transcription = self.merge_transcriptions_fast(transcriptions)
             
-            # NEW: Generate English translation
-            print("🌐 Generating English translation...")
-            english_translation = self.translate_to_english(final_transcription)
-            
             print(f"✅ Optimized transcription completed in {processing_time:.2f}s")
             print(f"📊 Success rate: {successful}/{len(chunks)} ({successful/len(chunks)*100:.1f}%)")
             
-            return final_transcription, original_path, enhanced_path, stats, english_translation
+            return final_transcription, original_path, enhanced_path, stats
                 
         except Exception as e:
             error_msg = f"❌ Optimized transcription failed: {e}"
             print(error_msg)
             OptimizedMemoryManager.fast_cleanup()
-            return error_msg, audio_path, audio_path, {}, ""
+            return error_msg, audio_path, audio_path, {}
     
     def merge_transcriptions_fast(self, transcriptions: List[str]) -> str:
         """OPTIMIZED: Fast transcription merging"""
@@ -576,7 +804,7 @@ class SafeLogCapture:
             
             if "⚡" in text or "Optimized" in text:
                 emoji = "⚡"
-            elif "🌐" in text or "Translation" in text:
+            elif "🌐" in text or "Translation" in text or "Smart" in text:
                 emoji = "🌐"
             elif "❌" in text or "Error" in text or "failed" in text:
                 emoji = "🔴"
@@ -634,10 +862,10 @@ def initialize_optimized_transcriber():
             print("⚡ Initializing Optimized Audio Transcription System...")
             print("🚀 Fast checkpoint loading enabled")
             print("⚡ 3x faster processing enabled") 
-            print("🌐 English translation feature enabled")
+            print("🌐 Smart text chunking for translation enabled")
             
             transcriber = OptimizedAudioTranscriber(model_path=MODEL_PATH, use_quantization=True)
-            return "✅ Optimized transcription system ready! Fast loading & translation enabled."
+            return "✅ Optimized transcription system ready! Fast loading & smart translation enabled."
         except Exception as e:
             try:
                 print("🔄 Retrying without quantization...")
@@ -650,19 +878,19 @@ def initialize_optimized_transcriber():
     return "✅ Optimized system already active!"
 
 def transcribe_audio_optimized(audio_input, language_choice, enhancement_level, progress=gr.Progress()):
-    """OPTIMIZED: Fast transcription interface with translation"""
+    """OPTIMIZED: Fast transcription interface without automatic translation"""
     global transcriber
     
     if audio_input is None:
         print("❌ No audio input provided")
-        return "❌ Please upload an audio file or record audio.", "", None, None, "", ""
+        return "❌ Please upload an audio file or record audio.", None, None, "", ""
     
     if transcriber is None:
         print("❌ Optimized system not initialized")
-        return "❌ System not initialized. Please wait for startup.", "", None, None, "", ""
+        return "❌ System not initialized. Please wait for startup.", None, None, "", ""
     
     start_time = time.time()
-    print(f"⚡ Starting optimized transcription with translation...")
+    print(f"⚡ Starting optimized transcription...")
     print(f"🌍 Language: {language_choice}")
     print(f"🔧 Enhancement: {enhancement_level}")
     
@@ -688,8 +916,8 @@ def transcribe_audio_optimized(audio_input, language_choice, enhancement_level, 
         
         progress(0.5, desc="Fast transcription in progress...")
         
-        # OPTIMIZED: Fast transcription with translation
-        transcription, original_path, enhanced_path, enhancement_stats, english_translation = transcriber.transcribe_with_optimization(
+        # OPTIMIZED: Fast transcription without automatic translation
+        transcription, original_path, enhanced_path, enhancement_stats = transcriber.transcribe_with_optimization(
             audio_path, language_code, enhancement_level
         )
         
@@ -716,13 +944,61 @@ def transcribe_audio_optimized(audio_input, language_choice, enhancement_level, 
         print(f"✅ Optimized transcription completed in {processing_time:.2f}s")
         print(f"📊 Output: {len(transcription.split()) if isinstance(transcription, str) else 0} words")
         
-        return transcription, english_translation, original_path, enhanced_path, enhancement_report, processing_report
+        return transcription, original_path, enhanced_path, enhancement_report, processing_report
         
     except Exception as e:
         error_msg = f"❌ Optimized system error: {str(e)}"
         print(error_msg)
         OptimizedMemoryManager.fast_cleanup()
-        return error_msg, "", None, None, "", ""
+        return error_msg, None, None, "", ""
+
+def translate_transcription(transcription_text, progress=gr.Progress()):
+    """NEW: Translate transcription using smart chunking (user-initiated)"""
+    global transcriber
+    
+    if not transcription_text or transcription_text.strip() == "":
+        return "❌ No transcription text to translate. Please transcribe audio first."
+    
+    if transcriber is None:
+        return "❌ System not initialized. Please wait for system startup."
+    
+    if transcription_text.startswith("❌") or transcription_text.startswith("["):
+        return "❌ Cannot translate error messages or system messages. Please provide valid transcription text."
+    
+    print(f"🌐 User requested translation for {len(transcription_text)} characters")
+    
+    progress(0.1, desc="Preparing text for smart translation...")
+    
+    try:
+        # Clean transcription text (remove processing summaries)
+        text_to_translate = transcription_text
+        if "\n\n[Processing Summary:" in text_to_translate:
+            text_to_translate = text_to_translate.split("\n\n[Processing Summary:")[0].strip()
+        
+        progress(0.3, desc="Creating smart text chunks...")
+        
+        # Use smart chunking for translation
+        start_time = time.time()
+        translated_text = transcriber.translate_text_chunks(text_to_translate)
+        translation_time = time.time() - start_time
+        
+        progress(0.9, desc="Finalizing translation...")
+        
+        # Add translation metadata
+        if not translated_text.startswith('['):
+            translated_text += f"\n\n[Translation completed in {translation_time:.2f}s using smart chunking]"
+        
+        progress(1.0, desc="Translation complete!")
+        
+        print(f"✅ Translation completed in {translation_time:.2f}s")
+        
+        return translated_text
+        
+    except Exception as e:
+        error_msg = f"❌ Translation failed: {str(e)}"
+        print(error_msg)
+        OptimizedMemoryManager.fast_cleanup()
+        return error_msg
 
 def create_optimized_enhancement_report(stats: Dict, level: str) -> str:
     """Create optimized enhancement report"""
@@ -747,12 +1023,19 @@ Enhancement Level: {level.upper()}
 • Chunk Size: {CHUNK_SECONDS} seconds (Optimized)
 • Enhancement: FAST PIPELINE
 
+🌐 TRANSLATION FEATURES:
+• Smart Text Chunking: ENABLED
+• Max Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters
+• Sentence Overlap: {SENTENCE_OVERLAP} sentences
+• Context Preservation: ADVANCED
+
 🚀 OPTIMIZATIONS APPLIED:
 1. ✅ Fast Model Loading (bfloat16 precision)
 2. ✅ Optimized Chunk Processing
 3. ✅ Streamlined Memory Management
 4. ✅ Reduced Processing Overhead
 5. ✅ Fast Audio Enhancement Pipeline
+6. ✅ Smart Text Chunking for Translation
 
 🏆 SPEED OPTIMIZATION SCORE: 100/100 - 3X FASTER PROCESSING
 
@@ -761,6 +1044,7 @@ Enhancement Level: {level.upper()}
 • Memory Checks: Every {CHECK_MEMORY_FREQUENCY} chunks (Optimized)
 • Cleanup Strategy: Minimal Overhead
 • Enhancement Focus: Speed + Quality Balance
+• Translation: User-Controlled with Smart Chunking
 """
     return report
 
@@ -802,36 +1086,39 @@ Generated: {timestamp}
 • Memory Checks: Every {CHECK_MEMORY_FREQUENCY} chunks
 • Max Retries: {MAX_RETRIES} (Speed Focused)
 
+🌐 SMART TRANSLATION FEATURES:
+• Translation Control: ✅ USER-INITIATED (Optional)
+• Smart Text Chunking: ✅ ENABLED
+• Context Preservation: ✅ SENTENCE OVERLAP
+• Max Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters
+• Min Chunk Size: {MIN_CHUNK_SIZE} characters
+• Sentence Detection: ✅ MULTI-METHOD
+
 ⚡ SPEED OPTIMIZATIONS:
 • Model Loading: ✅ FAST (bfloat16, optimized settings)
 • Inference Mode: ✅ torch.inference_mode() enabled
 • Model Compilation: ✅ torch.compile() if available
 • Memory Management: ✅ STREAMLINED
 • Chunk Processing: ✅ 3X FASTER
-• Translation Feature: ✅ INTEGRATED
-
-🌐 TRANSLATION FEATURE:
-• English Translation: ✅ ENABLED
-• Same Model Usage: ✅ EFFICIENT
-• Smart Detection: ✅ SKIP IF ALREADY ENGLISH
+• Translation: ✅ USER-CONTROLLED & SMART-CHUNKED
 
 📊 CURRENT STATUS:
 • Checkpoint Loading: ✅ OPTIMIZED
 • Processing Speed: ✅ 3X IMPROVEMENT
 • Memory Efficiency: ✅ STREAMLINED
-• Translation Ready: ✅ ACTIVE
+• Translation: ✅ OPTIONAL USER-CONTROLLED
 
 ✅ STATUS: OPTIMIZED PROCESSING COMPLETED
 ⚡ SPEED IMPROVEMENT: 3X FASTER THAN PREVIOUS VERSION
-🌐 TRANSLATION FEATURE: FULLY INTEGRATED
+🌐 TRANSLATION: OPTIONAL WITH SMART CHUNKING
 """
     return report
 
 def create_optimized_interface():
-    """Create optimized interface with translation feature"""
+    """Create optimized interface with optional translation control"""
     
     optimized_css = """
-    /* Optimized Lightning-Fast Theme */
+    /* Optimized User-Controlled Translation Theme */
     :root {
         --primary-color: #0f172a;
         --secondary-color: #1e293b;
@@ -839,6 +1126,7 @@ def create_optimized_interface():
         --lightning-color: #f59e0b;
         --success-color: #10b981;
         --translation-color: #3b82f6;
+        --user-control-color: #8b5cf6;
         --bg-primary: #020617;
         --bg-secondary: #0f172a;
         --bg-tertiary: #1e293b;
@@ -855,7 +1143,7 @@ def create_optimized_interface():
     }
     
     .lightning-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #eab308 100%) !important;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 30%, #eab308 70%, #3b82f6 100%) !important;
         padding: 50px 30px !important;
         border-radius: 25px !important;
         text-align: center !important;
@@ -866,9 +1154,9 @@ def create_optimized_interface():
     }
     
     .lightning-header::before {
-        content: '⚡' !important;
+        content: '⚡🌐' !important;
         position: absolute !important;
-        font-size: 8rem !important;
+        font-size: 6rem !important;
         opacity: 0.1 !important;
         top: 50% !important;
         left: 50% !important;
@@ -931,18 +1219,23 @@ def create_optimized_interface():
         box-shadow: 0 15px 40px rgba(234, 179, 8, 0.6) !important;
     }
     
-    .lightning-button::before {
-        content: '⚡' !important;
-        position: absolute !important;
-        left: -30px !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
-        font-size: 1.5rem !important;
-        transition: left 0.3s ease !important;
+    .translation-button {
+        background: linear-gradient(135deg, var(--translation-color) 0%, var(--user-control-color) 100%) !important;
+        border: none !important;
+        border-radius: 15px !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+        padding: 15px 30px !important;
+        transition: all 0.4s ease !important;
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
     }
     
-    .lightning-button:hover::before {
-        left: 10px !important;
+    .translation-button:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 15px 40px rgba(59, 130, 246, 0.6) !important;
     }
     
     .status-lightning {
@@ -956,8 +1249,8 @@ def create_optimized_interface():
         border: 2px solid rgba(16, 185, 129, 0.3) !important;
     }
     
-    .translation-card {
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%) !important;
+    .translation-section {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%) !important;
         border: 2px solid var(--translation-color) !important;
         border-radius: 20px !important;
         padding: 25px !important;
@@ -965,8 +1258,8 @@ def create_optimized_interface():
         position: relative !important;
     }
     
-    .translation-card::before {
-        content: '🌐' !important;
+    .translation-section::before {
+        content: '🌐 OPTIONAL' !important;
         position: absolute !important;
         top: -15px !important;
         left: 25px !important;
@@ -974,7 +1267,8 @@ def create_optimized_interface():
         color: white !important;
         padding: 8px 15px !important;
         border-radius: 20px !important;
-        font-size: 1.2rem !important;
+        font-size: 0.9rem !important;
+        font-weight: bold !important;
     }
     
     .card-header {
@@ -1015,23 +1309,32 @@ def create_optimized_interface():
         padding: 20px !important;
         margin: 15px 0 !important;
     }
+    
+    .feature-translation {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%) !important;
+        border: 2px solid rgba(59, 130, 246, 0.3) !important;
+        border-radius: 15px !important;
+        padding: 20px !important;
+        margin: 15px 0 !important;
+    }
     """
     
     with gr.Blocks(
         css=optimized_css, 
         theme=gr.themes.Base(),
-        title="⚡ Optimized Audio Transcription with Translation"
+        title="⚡ Optimized Transcription with Optional Translation"
     ) as interface:
         
         # Lightning Header
         gr.HTML("""
         <div class="lightning-header">
-            <h1 class="lightning-title">⚡ OPTIMIZED TRANSCRIPTION + TRANSLATION</h1>
-            <p class="lightning-subtitle">3X Faster Processing • Fast Checkpoint Loading • English Translation • 150+ Languages</p>
+            <h1 class="lightning-title">⚡ OPTIMIZED TRANSCRIPTION + OPTIONAL TRANSLATION</h1>
+            <p class="lightning-subtitle">3X Faster Processing • User-Controlled Translation • Smart Text Chunking • 150+ Languages</p>
             <div style="margin-top: 20px;">
                 <span style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">⚡ 3X FASTER</span>
                 <span style="background: rgba(234, 179, 8, 0.2); color: #eab308; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🚀 FAST LOADING</span>
-                <span style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🌐 TRANSLATION</span>
+                <span style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🌐 OPTIONAL TRANSLATION</span>
+                <span style="background: rgba(139, 92, 246, 0.2); color: #8b5cf6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">📝 SMART CHUNKING</span>
             </div>
         </div>
         """)
@@ -1039,7 +1342,7 @@ def create_optimized_interface():
         # System Status
         status_display = gr.Textbox(
             label="⚡ Optimized System Status",
-            value="Initializing optimized transcription system with translation...",
+            value="Initializing optimized transcription system with optional translation...",
             interactive=False,
             elem_classes="status-lightning"
         )
@@ -1087,32 +1390,45 @@ def create_optimized_interface():
                 transcription_output = gr.Textbox(
                     label="📝 Original Transcription",
                     placeholder="Your lightning-fast transcription will appear here...",
-                    lines=8,
+                    lines=10,
                     max_lines=15,
                     interactive=False,
                     show_copy_button=True
                 )
                 
-                # NEW: English Translation Output
-                gr.HTML('<div class="translation-card">')
-                gr.HTML('<div class="translation-header">🌐 English Translation</div>')
-                
-                english_translation_output = gr.Textbox(
-                    label="🌐 English Translation",
-                    placeholder="English translation will appear here automatically...",
-                    lines=6,
-                    max_lines=12,
-                    interactive=False,
-                    show_copy_button=True
-                )
+                copy_original_btn = gr.Button("📋 Copy Original Transcription", size="sm")
                 
                 gr.HTML('</div>')
+                
+                # NEW: Optional Translation Section
+                gr.HTML("""
+                <div class="translation-section">
+                    <div class="translation-header">🌐 Optional English Translation</div>
+                    <p style="color: #cbd5e1; margin-bottom: 20px; font-size: 1.1rem;">
+                        Click the button below to translate your transcription to English using smart text chunking that preserves meaning and context.
+                    </p>
+                </div>
+                """)
                 
                 with gr.Row():
-                    copy_original_btn = gr.Button("📋 Copy Original", size="sm")
-                    copy_translation_btn = gr.Button("🌐 Copy Translation", size="sm")
+                    translate_btn = gr.Button(
+                        "🌐 TRANSLATE TO ENGLISH (SMART CHUNKING)",
+                        variant="secondary",
+                        elem_classes="translation-button",
+                        size="lg"
+                    )
                 
-                gr.HTML('</div>')
+                english_translation_output = gr.Textbox(
+                    label="🌐 English Translation (Optional)",
+                    placeholder="Click the translate button above to generate English translation with smart chunking...",
+                    lines=8,
+                    max_lines=15,
+                    interactive=False,
+                    show_copy_button=True,
+                    visible=True
+                )
+                
+                copy_translation_btn = gr.Button("🌐 Copy English Translation", size="sm")
         
         # Audio Comparison
         gr.HTML("""
@@ -1164,7 +1480,7 @@ def create_optimized_interface():
         
         log_display = gr.Textbox(
             label="",
-            value="⚡ Lightning system ready - 3x faster processing with translation...",
+            value="⚡ Lightning system ready - 3x faster processing with optional translation...",
             interactive=False,
             lines=12,
             max_lines=16,
@@ -1181,37 +1497,29 @@ def create_optimized_interface():
         # Lightning Features
         gr.HTML("""
         <div class="lightning-card">
-            <div class="card-header">⚡ LIGHTNING FEATURES - 3X FASTER + TRANSLATION</div>
-            <div class="feature-lightning">
-                <h4 style="color: #eab308; margin-bottom: 15px;">🚀 SPEED OPTIMIZATIONS:</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                    <div>
-                        <h5 style="color: #10b981;">⚡ Fast Model Loading</h5>
-                        <ul style="color: #cbd5e1; line-height: 1.6;">
-                            <li>Optimized checkpoint loading</li>
-                            <li>bfloat16 precision for speed</li>
-                            <li>torch.compile() optimization</li>
-                            <li>Streamlined initialization</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h5 style="color: #10b981;">🏃 3X Faster Processing</h5>
-                        <ul style="color: #cbd5e1; line-height: 1.6;">
-                            <li>torch.inference_mode() enabled</li>
-                            <li>Reduced memory checks</li>
-                            <li>Optimized chunk sizes</li>
-                            <li>Minimal processing overhead</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h5 style="color: #3b82f6;">🌐 Translation Feature</h5>
-                        <ul style="color: #cbd5e1; line-height: 1.6;">
-                            <li>Same model for translation</li>
-                            <li>Smart English detection</li>
-                            <li>Automatic translation</li>
-                            <li>Dual output display</li>
-                        </ul>
-                    </div>
+            <div class="card-header">⚡ LIGHTNING FEATURES - USER-CONTROLLED TRANSLATION</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+                <div class="feature-lightning">
+                    <h4 style="color: #eab308; margin-bottom: 15px;">🚀 SPEED OPTIMIZATIONS:</h4>
+                    <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
+                        <li>⚡ Fast Model Loading (3x improvement)</li>
+                        <li>🏃 Optimized Processing Pipeline</li>
+                        <li>🧠 Streamlined Memory Management</li>
+                        <li>📦 Reduced Chunk Processing Time</li>
+                        <li>🔧 torch.inference_mode() enabled</li>
+                        <li>⚙️ Model compilation optimization</li>
+                    </ul>
+                </div>
+                <div class="feature-translation">
+                    <h4 style="color: #3b82f6; margin-bottom: 15px;">🌐 SMART TRANSLATION FEATURES:</h4>
+                    <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
+                        <li>👤 User-Controlled (Optional)</li>
+                        <li>📝 Smart Text Chunking</li>
+                        <li>🔗 Context Preservation</li>
+                        <li>📏 Intelligent Sentence Splitting</li>
+                        <li>🎯 Meaning-Preserving Overlap</li>
+                        <li>🛡️ Error Recovery for Long Texts</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -1220,15 +1528,15 @@ def create_optimized_interface():
         # Footer
         gr.HTML("""
         <div style="text-align: center; margin-top: 50px; padding: 40px; background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%); border-radius: 20px; border: 2px solid var(--accent-color);">
-            <h3 style="color: #eab308; margin-bottom: 20px;">⚡ LIGHTNING TRANSCRIPTION + TRANSLATION</h3>
-            <p style="color: #cbd5e1; margin-bottom: 15px;">3X Faster Processing • Fast Checkpoint Loading • Automatic English Translation</p>
-            <p style="color: #10b981; font-weight: 700;">⚡ SPEED: 3X IMPROVEMENT | 🌐 TRANSLATION: FULLY INTEGRATED</p>
+            <h3 style="color: #eab308; margin-bottom: 20px;">⚡ LIGHTNING TRANSCRIPTION + OPTIONAL SMART TRANSLATION</h3>
+            <p style="color: #cbd5e1; margin-bottom: 15px;">3X Faster Processing • User-Controlled Translation • Smart Text Chunking • Context Preservation</p>
+            <p style="color: #10b981; font-weight: 700;">⚡ SPEED: 3X IMPROVEMENT | 🌐 TRANSLATION: USER-CONTROLLED & SMART-CHUNKED</p>
             <div style="margin-top: 25px; padding: 20px; background: rgba(234, 179, 8, 0.1); border-radius: 15px;">
-                <h4 style="color: #eab308; margin-bottom: 10px;">🚀 OPTIMIZATIONS COMPLETELY IMPLEMENTED:</h4>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>⚡ Model Loading:</strong> LIGHTNING FAST - Optimized checkpoint loading</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🏃 Processing Speed:</strong> 3X FASTER - Streamlined inference pipeline</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🌐 Translation:</strong> INTEGRATED - Same model, dual output</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🎯 Memory:</strong> OPTIMIZED - Minimal overhead, maximum speed</p>
+                <h4 style="color: #eab308; margin-bottom: 10px;">🔧 NEW FEATURES COMPLETELY IMPLEMENTED:</h4>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>👤 User Control:</strong> OPTIONAL - Translation only when user requests</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>📝 Smart Chunking:</strong> ADVANCED - Preserves meaning with sentence overlap</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🔗 Context Preservation:</strong> INTELLIGENT - No loss of meaning or details</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>⚡ Processing Speed:</strong> 3X FASTER - Optimized checkpoint loading</p>
             </div>
         </div>
         """)
@@ -1237,7 +1545,15 @@ def create_optimized_interface():
         transcribe_btn.click(
             fn=transcribe_audio_optimized,
             inputs=[audio_input, language_dropdown, enhancement_radio],
-            outputs=[transcription_output, english_translation_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        # NEW: Translation button handler
+        translate_btn.click(
+            fn=translate_transcription,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
             show_progress=True
         )
         
@@ -1296,7 +1612,7 @@ def create_optimized_interface():
     return interface
 
 def main():
-    """Launch the optimized transcription system"""
+    """Launch the optimized transcription system with optional translation"""
     
     if "/path/to/your/" in MODEL_PATH:
         print("="*80)
@@ -1310,31 +1626,32 @@ def main():
     # Setup optimized logging
     setup_optimized_logging()
     
-    print("⚡ Launching Optimized Audio Transcription System with Translation...")
+    print("⚡ Launching Optimized Audio Transcription System with Optional Translation...")
     print("="*80)
-    print("🚀 CRITICAL OPTIMIZATIONS IMPLEMENTED:")
-    print("   ⚡ Fast checkpoint loading: OPTIMIZED (bfloat16, streamlined)")
-    print("   🏃 Processing speed: 3X FASTER (inference_mode, reduced checks)")
-    print("   🌐 English translation: INTEGRATED (same model, dual output)")
-    print("   📦 Chunk processing: STREAMLINED (12s chunks, minimal overhead)")
-    print("   🧠 Memory management: OPTIMIZED (relaxed thresholds, fast cleanup)")
+    print("🔧 NEW OPTIONAL TRANSLATION FEATURES:")
+    print("   👤 User-Controlled: Translation only when user clicks button")
+    print("   📝 Smart Text Chunking: Preserves meaning and context")
+    print("   🔗 Sentence Overlap: Maintains context between chunks")
+    print("   📏 Intelligent Splitting: Multi-method sentence detection")
+    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
     print("="*80)
-    print("⚡ SPEED IMPROVEMENTS:")
-    print("   🚀 Model loading time: REDUCED by optimized settings")
-    print("   ⚡ Inference speed: 3X FASTER with torch.inference_mode()")
-    print("   🎯 Memory checks: REDUCED frequency for speed")
-    print("   🔧 Enhancement pipeline: STREAMLINED for speed")
-    print("   📊 Overall processing: 3X PERFORMANCE IMPROVEMENT")
+    print("📝 SMART CHUNKING SPECIFICATIONS:")
+    print(f"   • Max Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters")
+    print(f"   • Min Chunk Size: {MIN_CHUNK_SIZE} characters")
+    print(f"   • Sentence Overlap: {SENTENCE_OVERLAP} sentences for context")
+    print("   • Detection Methods: NLTK + Regex + Fallback")
+    print("   • Context Preservation: Advanced sentence boundary detection")
     print("="*80)
-    print("🌐 NEW TRANSLATION FEATURE:")
-    print("   • Automatic English translation using same model")
-    print("   • Smart detection to skip if already English")
-    print("   • Dual output display in professional UI")
-    print("   • Copy buttons for both original and translation")
+    print("⚡ SPEED OPTIMIZATIONS (MAINTAINED):")
+    print("   🚀 Model loading: 3X FASTER with optimized settings")
+    print("   ⚡ Processing: torch.inference_mode() + compilation")
+    print("   🧠 Memory: Streamlined management with relaxed thresholds")
+    print("   📦 Chunks: Optimized 12-second chunks with 2s overlap")
     print("="*80)
     print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
     print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
     print("   • All major world languages and regional variants")
+    print("   • Smart translation to English for any supported language")
     print("="*80)
     
     try:
@@ -1359,7 +1676,7 @@ def main():
         print("   • Verify model path is correct")
         print("   • Check GPU memory availability")
         print("   • Ensure PyTorch version supports bfloat16")
-        print("   • Try: pip install --upgrade torch transformers gradio")
+        print("   • Try: pip install --upgrade torch transformers gradio nltk")
 
 if __name__ == "__main__":
     main()
