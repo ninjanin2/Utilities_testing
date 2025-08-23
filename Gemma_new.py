@@ -1875,4 +1875,38 @@ def main():
     print("   🛡️ Error Recovery: Graceful handling of failed chunks")
     print("="*80)
     print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
-    print("   • Burmese,
+    print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
+    print("   • All major world languages and regional variants")
+    print("   • Smart English detection to skip unnecessary translation")
+    print("="*80)
+    
+    try:
+        interface = create_speech_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception as e:
+        print(f"❌ Speech-preserving system launch failed: {e}")
+        print("🔧 Speech system troubleshooting:")
+        print("   • Verify model path is correct and accessible")
+        print("   • Check GPU memory availability and drivers")
+        print("   • Ensure all dependencies are installed:")
+        print("     pip install --upgrade torch transformers gradio librosa soundfile")
+        print("     pip install --upgrade noisereduce scipy nltk")
+        print("   • Verify Python environment and version compatibility")
+        print("   • Check port 7860 availability")
+        print("="*80)
+
+if __name__ == "__main__":
+    main()
