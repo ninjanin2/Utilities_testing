@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-FIXED AUDIO TRANSCRIPTION WITH OPTIONAL ENGLISH TRANSLATION
-===========================================================
+COMPLETE FIXED AUDIO TRANSCRIPTION WITH OPTIONAL ENGLISH TRANSLATION
+====================================================================
 
-CRITICAL FIX:
-- Proper audio type handling for Gradio inputs
+CRITICAL FIXES APPLIED:
+- Fixed "Unexpected type in sourceless builder" error completely
+- Proper audio type handling for all Gradio input types
 - Convert numpy arrays to temporary files before model processing
-- Fixed "Unexpected type in sourceless builder" error
-- Proper cleanup of temporary files
+- Safe temporary file management with guaranteed cleanup
+- Optional user-controlled translation with smart chunking
 
 Author: Advanced AI Audio Processing System
-Version: Fixed Audio Handling 8.0
+Version: Complete Fixed 8.0
 """
 
 import os
@@ -249,13 +250,11 @@ class SmartTextChunker:
             pass
         
         # Method 2: Simple regex-based sentence splitting
-        # Split on sentence endings followed by whitespace and capital letter
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
         
         # Method 3: Fallback - split on periods if no proper sentences found
         if len(sentences) <= 1:
             sentences = re.split(r'\.\s+', text)
-            # Add periods back except for the last sentence
             sentences = [s + '.' if i < len(sentences) - 1 and not s.endswith('.') else s 
                         for i, s in enumerate(sentences)]
         
@@ -276,7 +275,6 @@ class SmartTextChunker:
         print(f"📄 Split into {len(sentences)} sentences")
         
         if len(sentences) <= 1:
-            # If we can't split into sentences, split by paragraphs or lines
             return self.fallback_chunking(text)
         
         chunks = []
@@ -370,12 +368,11 @@ class FastAudioEnhancer:
     def fast_noise_reduction(self, audio: np.ndarray) -> np.ndarray:
         """OPTIMIZED: Fast noise reduction"""
         try:
-            # OPTIMIZED: Use stationary mode for speed
             reduced = nr.reduce_noise(
                 y=audio, 
                 sr=self.sample_rate, 
                 stationary=True,
-                prop_decrease=0.6  # OPTIMIZED: Less aggressive for speed
+                prop_decrease=0.6
             )
             return reduced.astype(np.float32)
         except Exception as e:
@@ -385,7 +382,6 @@ class FastAudioEnhancer:
     def fast_filtering(self, audio: np.ndarray) -> np.ndarray:
         """OPTIMIZED: Fast essential filtering only"""
         try:
-            # OPTIMIZED: Only essential high-pass filter
             sos_hp = signal.butter(2, 85, btype='high', fs=self.sample_rate, output='sos')
             audio = signal.sosfilt(sos_hp, audio)
             return audio.astype(np.float32)
@@ -404,7 +400,6 @@ class FastAudioEnhancer:
             
             stats['original_length'] = len(audio) / self.sample_rate
             
-            # OPTIMIZED: Only essential processing for speed
             if enhancement_level in ["moderate", "aggressive"]:
                 print("📊 Fast noise reduction...")
                 audio = self.fast_noise_reduction(audio)
@@ -412,7 +407,6 @@ class FastAudioEnhancer:
             print("🔧 Fast filtering...")
             audio = self.fast_filtering(audio)
             
-            # OPTIMIZED: Quick normalization
             audio = librosa.util.normalize(audio)
             audio = np.clip(audio, -0.99, 0.99)
             
@@ -453,10 +447,8 @@ class FixedAudioTranscriber:
             print("🚀 Loading model with optimized settings for speed...")
             start_time = time.time()
             
-            # OPTIMIZED: Load processor quickly
             self.processor = Gemma3nProcessor.from_pretrained(model_path)
             
-            # OPTIMIZED: Conservative quantization for speed
             if use_quantization and self.device.type == "cuda":
                 quantization_config = BitsAndBytesConfig(
                     load_in_8bit=True,
@@ -468,7 +460,6 @@ class FixedAudioTranscriber:
                 quantization_config = None
                 print("🔧 Using bfloat16 precision...")
 
-            # OPTIMIZED: Fast model loading
             self.model = Gemma3nForConditionalGeneration.from_pretrained(
                 model_path,
                 torch_dtype=self.dtype,
@@ -479,16 +470,14 @@ class FixedAudioTranscriber:
                 use_safetensors=True,
             )
             
-            # OPTIMIZED: Set to evaluation mode for inference speed
             self.model.eval()
             
-            # OPTIMIZED: Compile model for speed (if supported)
             try:
                 if hasattr(torch, 'compile'):
                     self.model = torch.compile(self.model, mode="reduce-overhead")
                     print("⚡ Model compiled for speed optimization")
             except:
-                pass  # Skip if compilation fails
+                pass
             
             loading_time = time.time() - start_time
             OptimizedMemoryManager.log_memory_status("After optimized model loading", force_log=True)
@@ -510,10 +499,8 @@ class FixedAudioTranscriber:
         while start < len(audio_array):
             end = min(start + chunk_samples, len(audio_array))
             
-            # OPTIMIZED: Simple chunk handling
             if end - start < SAMPLE_RATE:  # Less than 1 second
                 if chunks:
-                    # Extend last chunk
                     last_chunk, last_start, _ = chunks.pop()
                     extended_chunk = audio_array[int(last_start * SAMPLE_RATE):end]
                     chunks.append((extended_chunk, last_start, end / SAMPLE_RATE))
@@ -527,8 +514,7 @@ class FixedAudioTranscriber:
             
             start += stride
             
-            # OPTIMIZED: Reasonable limit
-            if len(chunks) >= 80:  # Max 80 chunks for speed
+            if len(chunks) >= 80:
                 print("⚠️ Reached chunk limit for processing speed")
                 break
         
@@ -543,7 +529,6 @@ class FixedAudioTranscriber:
         temp_audio_file = None
         
         try:
-            # FIXED: Skip frequent memory checks for speed
             self.chunk_count += 1
             if self.chunk_count % CHECK_MEMORY_FREQUENCY == 0:
                 if not OptimizedMemoryManager.quick_memory_check():
@@ -553,7 +538,6 @@ class FixedAudioTranscriber:
             temp_audio_file = AudioHandler.numpy_to_temp_file(audio_chunk, SAMPLE_RATE)
             self.temp_files.append(temp_audio_file)
             
-            # OPTIMIZED: Simple system message
             if language == "auto":
                 system_message = "Transcribe this audio accurately with proper punctuation."
             else:
@@ -576,7 +560,6 @@ class FixedAudioTranscriber:
                 },
             ]
 
-            # OPTIMIZED: Fast processing with inference mode
             with torch.inference_mode():
                 inputs = self.processor.apply_chat_template(
                     message,
@@ -588,10 +571,9 @@ class FixedAudioTranscriber:
 
                 input_len = inputs["input_ids"].shape[-1]
 
-                # OPTIMIZED: Fast generation with reduced parameters
                 generation = self.model.generate(
                     **inputs, 
-                    max_new_tokens=200,  # OPTIMIZED: Reduced for speed
+                    max_new_tokens=200,
                     do_sample=False,
                     temperature=0.1,
                     disable_compile=False,
@@ -603,7 +585,6 @@ class FixedAudioTranscriber:
                 generation = generation[0][input_len:]
                 transcription = self.processor.decode(generation, skip_special_tokens=True)
                 
-                # OPTIMIZED: Quick cleanup
                 del inputs, generation
                 
                 result = transcription.strip()
@@ -635,7 +616,7 @@ class FixedAudioTranscriber:
         try:
             print("🌐 Starting smart text translation...")
             
-            # Check if text is already in English (enhanced detection)
+            # Check if text is already in English
             english_indicators = [
                 "the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you",
                 "have", "be", "this", "from", "they", "will", "been", "has", "were", "said", "each", "which", "can",
@@ -669,7 +650,6 @@ class FixedAudioTranscriber:
                     
                     if translated_chunk.startswith('['):
                         print(f"⚠️ Chunk {i} translation issue: {translated_chunk}")
-                        # Use original chunk if translation fails
                         translated_chunks.append(chunk)
                     else:
                         translated_chunks.append(translated_chunk)
@@ -677,13 +657,11 @@ class FixedAudioTranscriber:
                     
                 except Exception as e:
                     print(f"❌ Chunk {i} translation failed: {e}")
-                    translated_chunks.append(chunk)  # Fallback to original
+                    translated_chunks.append(chunk)
                 
-                # Cleanup between chunks
                 OptimizedMemoryManager.fast_cleanup()
-                time.sleep(0.2)  # Small delay for stability
+                time.sleep(0.2)
             
-            # Merge translated chunks intelligently
             merged_translation = self.merge_translated_chunks(translated_chunks)
             
             print("✅ Smart text translation completed")
@@ -697,7 +675,6 @@ class FixedAudioTranscriber:
     def translate_single_chunk(self, chunk: str) -> str:
         """Translate a single text chunk"""
         try:
-            # Enhanced translation prompt
             message = [
                 {
                     "role": "system",
@@ -722,10 +699,9 @@ class FixedAudioTranscriber:
 
                 input_len = inputs["input_ids"].shape[-1]
 
-                # OPTIMIZED: Translation generation
                 generation = self.model.generate(
                     **inputs, 
-                    max_new_tokens=300,  # More tokens for translation
+                    max_new_tokens=300,
                     do_sample=False,
                     temperature=0.1,
                     disable_compile=False,
@@ -737,7 +713,6 @@ class FixedAudioTranscriber:
                 generation = generation[0][input_len:]
                 translation = self.processor.decode(generation, skip_special_tokens=True)
                 
-                # Cleanup
                 del inputs, generation
                 
                 result = translation.strip()
@@ -755,26 +730,21 @@ class FixedAudioTranscriber:
         if not translated_chunks:
             return "[NO_TRANSLATED_CHUNKS]"
         
-        # Remove error chunks for merging
         valid_chunks = [chunk for chunk in translated_chunks if not chunk.startswith('[')]
         
         if not valid_chunks:
             return "[ALL_CHUNKS_FAILED]"
         
-        # Smart merging with proper spacing
         merged_text = ""
         for i, chunk in enumerate(valid_chunks):
             if i == 0:
                 merged_text = chunk
             else:
-                # Check if we need spacing
                 if not merged_text.endswith((' ', '\n')) and not chunk.startswith((' ', '\n')):
-                    # Add space if the previous chunk doesn't end with sentence punctuation
                     if not merged_text.endswith(('.', '!', '?', ':', ';')):
                         merged_text += " "
                 merged_text += chunk
         
-        # Add summary if some chunks failed
         failed_chunks = len(translated_chunks) - len(valid_chunks)
         if failed_chunks > 0:
             success_rate = (len(valid_chunks) / len(translated_chunks)) * 100
@@ -792,13 +762,11 @@ class FixedAudioTranscriber:
             
             OptimizedMemoryManager.log_memory_status("Initial", force_log=True)
             
-            # FIXED: Smart audio loading
             try:
                 audio_info = sf.info(audio_path)
                 duration_seconds = audio_info.frames / audio_info.samplerate
                 print(f"⏱️ Audio duration: {duration_seconds:.2f} seconds")
                 
-                # OPTIMIZED: Process up to 10 minutes for speed
                 max_duration = 600  # 10 minutes
                 if duration_seconds > max_duration:
                     print(f"⚠️ Processing first {max_duration/60:.1f} minutes for speed")
@@ -810,24 +778,20 @@ class FixedAudioTranscriber:
                 print(f"❌ Audio loading failed: {e}")
                 return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
             
-            # Fast audio enhancement
             enhanced_audio, stats = self.enhancer.fast_enhancement_pipeline(audio_array, enhancement_level)
             
-            # Save processed audio
             enhanced_path = tempfile.mktemp(suffix="_enhanced.wav")
             original_path = tempfile.mktemp(suffix="_original.wav")
             
             sf.write(enhanced_path, enhanced_audio, SAMPLE_RATE)
             sf.write(original_path, audio_array, SAMPLE_RATE)
             
-            # OPTIMIZED: Create fast chunks
             print("✂️ Creating optimized chunks...")
             chunks = self.create_fast_chunks(enhanced_audio)
             
             if not chunks:
                 return "❌ No valid chunks created", original_path, enhanced_path, stats
             
-            # FIXED: Process chunks with proper audio handling
             transcriptions = []
             successful = 0
             
@@ -850,13 +814,11 @@ class FixedAudioTranscriber:
                     print(f"❌ Chunk {i+1} failed: {e}")
                     transcriptions.append(f"[CHUNK_{i+1}_ERROR]")
                 
-                # OPTIMIZED: Minimal cleanup
                 if i % CHECK_MEMORY_FREQUENCY == 0:
                     OptimizedMemoryManager.fast_cleanup()
             
             processing_time = time.time() - start_time
             
-            # Merge transcriptions
             print("🔗 Merging transcriptions...")
             final_transcription = self.merge_transcriptions_fast(transcriptions)
             
@@ -871,7 +833,6 @@ class FixedAudioTranscriber:
             OptimizedMemoryManager.fast_cleanup()
             return error_msg, audio_path, audio_path, {}
         finally:
-            # FIXED: Cleanup all temp files
             for temp_file in self.temp_files:
                 AudioHandler.cleanup_temp_file(temp_file)
             self.temp_files.clear()
@@ -895,10 +856,8 @@ class FixedAudioTranscriber:
         if not valid_transcriptions:
             return f"❌ No valid transcriptions from {len(transcriptions)} chunks."
         
-        # Fast merging
         merged_text = " ".join(valid_transcriptions)
         
-        # Add summary if there were errors
         if error_count > 0:
             success_rate = (len(valid_transcriptions) / len(transcriptions)) * 100
             merged_text += f"\n\n[Processing Summary: {len(valid_transcriptions)}/{len(transcriptions)} chunks successful ({success_rate:.1f}% success rate)]"
@@ -1027,7 +986,6 @@ def transcribe_audio_fixed(audio_input, language_choice, enhancement_level, prog
         
         progress(0.3, desc="Applying fast enhancement...")
         
-        # Get language code
         language_code = SUPPORTED_LANGUAGES.get(language_choice, "auto")
         print(f"🔤 Language code: {language_code}")
         
@@ -1040,7 +998,6 @@ def transcribe_audio_fixed(audio_input, language_choice, enhancement_level, prog
         
         progress(0.9, desc="Generating reports...")
         
-        # Create reports
         enhancement_report = create_fixed_enhancement_report(enhancement_stats, enhancement_level)
         
         processing_time = time.time() - start_time
@@ -1062,7 +1019,6 @@ def transcribe_audio_fixed(audio_input, language_choice, enhancement_level, prog
         OptimizedMemoryManager.fast_cleanup()
         return error_msg, None, None, "", ""
     finally:
-        # FIXED: Always cleanup temp files
         if temp_audio_path and temp_audio_path.startswith('/tmp'):
             AudioHandler.cleanup_temp_file(temp_audio_path)
 
@@ -1084,21 +1040,18 @@ def translate_transcription(transcription_text, progress=gr.Progress()):
     progress(0.1, desc="Preparing text for smart translation...")
     
     try:
-        # Clean transcription text (remove processing summaries)
         text_to_translate = transcription_text
         if "\n\n[Processing Summary:" in text_to_translate:
             text_to_translate = text_to_translate.split("\n\n[Processing Summary:")[0].strip()
         
         progress(0.3, desc="Creating smart text chunks...")
         
-        # Use smart chunking for translation
         start_time = time.time()
         translated_text = transcriber.translate_text_chunks(text_to_translate)
         translation_time = time.time() - start_time
         
         progress(0.9, desc="Finalizing translation...")
         
-        # Add translation metadata
         if not translated_text.startswith('['):
             translated_text += f"\n\n[Translation completed in {translation_time:.2f}s using smart chunking]"
         
@@ -1262,17 +1215,6 @@ def create_fixed_interface():
         overflow: hidden !important;
     }
     
-    .fixed-header::before {
-        content: '🔧✅' !important;
-        position: absolute !important;
-        font-size: 6rem !important;
-        opacity: 0.1 !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
-        z-index: 1 !important;
-    }
-    
     .fixed-title {
         font-size: 3.5rem !important;
         font-weight: 900 !important;
@@ -1301,12 +1243,6 @@ def create_fixed_interface():
         transition: all 0.4s ease !important;
     }
     
-    .fixed-card:hover {
-        transform: translateY(-5px) !important;
-        box-shadow: 0 25px 50px rgba(16, 185, 129, 0.3) !important;
-        border-color: var(--fixed-color) !important;
-    }
-    
     .fixed-button {
         background: linear-gradient(135deg, var(--accent-color) 0%, var(--fixed-color) 100%) !important;
         border: none !important;
@@ -1321,11 +1257,6 @@ def create_fixed_interface():
         letter-spacing: 1px !important;
     }
     
-    .fixed-button:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 15px 40px rgba(16, 185, 129, 0.6) !important;
-    }
-    
     .translation-button {
         background: linear-gradient(135deg, var(--translation-color) 0%, var(--accent-color) 100%) !important;
         border: none !important;
@@ -1338,11 +1269,6 @@ def create_fixed_interface():
         box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
         text-transform: uppercase !important;
         letter-spacing: 1px !important;
-    }
-    
-    .translation-button:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 15px 40px rgba(59, 130, 246, 0.6) !important;
     }
     
     .status-fixed {
@@ -1365,19 +1291,6 @@ def create_fixed_interface():
         position: relative !important;
     }
     
-    .translation-section::before {
-        content: '🌐 OPTIONAL' !important;
-        position: absolute !important;
-        top: -15px !important;
-        left: 25px !important;
-        background: var(--translation-color) !important;
-        color: white !important;
-        padding: 8px 15px !important;
-        border-radius: 20px !important;
-        font-size: 0.9rem !important;
-        font-weight: bold !important;
-    }
-    
     .card-header {
         color: var(--accent-color) !important;
         font-size: 1.5rem !important;
@@ -1385,14 +1298,6 @@ def create_fixed_interface():
         margin-bottom: 25px !important;
         padding-bottom: 15px !important;
         border-bottom: 3px solid var(--accent-color) !important;
-    }
-    
-    .translation-header {
-        color: var(--translation-color) !important;
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-        margin-bottom: 20px !important;
-        margin-top: 15px !important;
     }
     
     .log-fixed {
@@ -1407,14 +1312,6 @@ def create_fixed_interface():
         max-height: 350px !important;
         overflow-y: auto !important;
         white-space: pre-wrap !important;
-    }
-    
-    .feature-fixed {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%) !important;
-        border: 2px solid rgba(16, 185, 129, 0.3) !important;
-        border-radius: 15px !important;
-        padding: 20px !important;
-        margin: 15px 0 !important;
     }
     """
     
@@ -1433,7 +1330,6 @@ def create_fixed_interface():
                 <span style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🔧 ERRORS FIXED</span>
                 <span style="background: rgba(6, 182, 212, 0.2); color: #06b6d4; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">✅ STABLE AUDIO</span>
                 <span style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🌐 SMART TRANSLATION</span>
-                <span style="background: rgba(139, 92, 246, 0.2); color: #8b5cf6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">📝 SMART CHUNKING</span>
             </div>
         </div>
         """)
@@ -1502,7 +1398,7 @@ def create_fixed_interface():
                 # Optional Translation Section
                 gr.HTML("""
                 <div class="translation-section">
-                    <div class="translation-header">🌐 Optional English Translation</div>
+                    <div style="color: #3b82f6; font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; margin-top: 15px;">🌐 Optional English Translation</div>
                     <p style="color: #cbd5e1; margin-bottom: 20px; font-size: 1.1rem;">
                         Click the button below to translate your transcription to English using smart text chunking that preserves meaning and context.
                     </p>
@@ -1523,20 +1419,12 @@ def create_fixed_interface():
                     lines=8,
                     max_lines=15,
                     interactive=False,
-                    show_copy_button=True,
-                    visible=True
+                    show_copy_button=True
                 )
                 
                 copy_translation_btn = gr.Button("🌐 Copy English Translation", size="sm")
         
         # Audio Comparison
-        gr.HTML("""
-        <div class="fixed-card">
-            <div class="card-header">🎵 FIXED AUDIO ENHANCEMENT</div>
-            <p style="color: #cbd5e1; margin-bottom: 25px;">Compare original and enhanced audio (processed with fixed audio handling):</p>
-        </div>
-        """)
-        
         with gr.Row():
             with gr.Column():
                 gr.HTML('<div class="fixed-card"><div class="card-header">📥 Original Audio</div>')
@@ -1592,56 +1480,6 @@ def create_fixed_interface():
             clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
         
         gr.HTML('</div>')
-        
-        # Fixed Features
-        gr.HTML("""
-        <div class="fixed-card">
-            <div class="card-header">🔧 FIXED FEATURES - ALL ERRORS RESOLVED</div>
-            <div class="feature-fixed">
-                <h4 style="color: #10b981; margin-bottom: 15px;">🔧 CRITICAL ERROR FIXES:</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
-                    <div>
-                        <h5 style="color: #10b981;">✅ Audio Handling Errors</h5>
-                        <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
-                            <li>🔧 "Unexpected type in sourceless builder" - FIXED</li>
-                            <li>📱 Gradio audio input handling - FIXED</li>
-                            <li>🔄 Numpy array to file conversion - AUTOMATIC</li>
-                            <li>🗑️ Temporary file cleanup - GUARANTEED</li>
-                            <li>⚡ Memory management - OPTIMIZED</li>
-                            <li>🛡️ Error recovery - COMPREHENSIVE</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h5 style="color: #10b981;">🌐 Smart Translation</h5>
-                        <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
-                            <li>👤 User-controlled translation</li>
-                            <li>📝 Smart text chunking (1000 chars)</li>
-                            <li>🔗 Context preservation (sentence overlap)</li>
-                            <li>📏 Intelligent sentence splitting</li>
-                            <li>🎯 Meaning preservation</li>
-                            <li>🛡️ Error-tolerant processing</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-        """)
-        
-        # Footer
-        gr.HTML("""
-        <div style="text-align: center; margin-top: 50px; padding: 40px; background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%); border-radius: 20px; border: 2px solid var(--accent-color);">
-            <h3 style="color: #10b981; margin-bottom: 20px;">🔧 FIXED AUDIO TRANSCRIPTION + OPTIONAL TRANSLATION</h3>
-            <p style="color: #cbd5e1; margin-bottom: 15px;">Audio Errors Fixed • Type Issues Resolved • Smart Translation • Reliable Processing</p>
-            <p style="color: #10b981; font-weight: 700;">🔧 ERRORS: COMPLETELY FIXED | 🌐 TRANSLATION: SMART & OPTIONAL</p>
-            <div style="margin-top: 25px; padding: 20px; background: rgba(16, 185, 129, 0.1); border-radius: 15px;">
-                <h4 style="color: #10b981; margin-bottom: 10px;">🔧 ALL CRITICAL ERRORS COMPLETELY FIXED:</h4>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🔧 Audio Type Errors:</strong> FIXED - Proper numpy array conversion</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>📱 Gradio Input Handling:</strong> FIXED - All input types supported</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🗑️ Memory Management:</strong> FIXED - Safe temp file cleanup</p>
-                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🌐 Smart Translation:</strong> ENHANCED - Context-preserving chunking</p>
-            </div>
-        </div>
-        """)
         
         # Event Handlers
         transcribe_btn.click(
@@ -1714,11 +1552,11 @@ def create_fixed_interface():
     return interface
 
 def main():
-    """Launch the fixed audio transcription system"""
+    """Launch the complete fixed audio transcription system"""
     
     if "/path/to/your/" in MODEL_PATH:
         print("="*80)
-        print("🔧 FIXED SYSTEM CONFIGURATION REQUIRED")
+        print("🔧 COMPLETE FIXED SYSTEM CONFIGURATION REQUIRED")
         print("="*80)
         print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
         print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
@@ -1728,7 +1566,7 @@ def main():
     # Setup fixed logging
     setup_fixed_logging()
     
-    print("🔧 Launching FIXED Audio Transcription System with Optional Translation...")
+    print("🔧 Launching COMPLETE FIXED Audio Transcription System with Optional Translation...")
     print("="*80)
     print("🔧 CRITICAL AUDIO ERRORS COMPLETELY FIXED:")
     print("   ❌ 'Unexpected type in sourceless builder': COMPLETELY RESOLVED")
@@ -1754,4 +1592,37 @@ def main():
     print("="*80)
     print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
     print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
-    print("   • All
+    print("   • All major world languages and regional variants")
+    print("   • Smart English detection to skip unnecessary translation")
+    print("="*80)
+    
+    try:
+        interface = create_fixed_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception as e:
+        print(f"❌ Complete fixed system launch failed: {e}")
+        print("🔧 Complete system troubleshooting:")
+        print("   • Verify model path is correct and accessible")
+        print("   • Check GPU memory availability and drivers")
+        print("   • Ensure all dependencies are installed:")
+        print("     pip install --upgrade torch transformers gradio librosa soundfile")
+        print("     pip install --upgrade noisereduce scipy nltk")
+        print("   • Verify Python environment and version compatibility")
+        print("   • Check port 7860 availability")
+        print("="*80)
+
+if __name__ == "__main__":
+    main()
