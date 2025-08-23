@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-ADVANCED NEURAL AUDIO TRANSCRIPTION WITH NEURAL PREPROCESSING
-===========================================================
+COMPLETE ADVANCED NEURAL AUDIO TRANSCRIPTION WITH NEURAL PREPROCESSING
+====================================================================
 
 ADVANCED FEATURES:
 - Neural network-based audio denoising (created within script)
@@ -12,7 +12,7 @@ ADVANCED FEATURES:
 - Advanced distortion correction and cleanup
 
 Author: Advanced AI Audio Processing System
-Version: Neural-Enhanced 10.0
+Version: Complete Neural-Enhanced 10.0
 """
 
 import os
@@ -1680,10 +1680,10 @@ Generated: {timestamp}
     return report
 
 def create_neural_interface():
-    """Create neural-enhanced interface with timeout display"""
+    """Create complete neural-enhanced interface with timeout display"""
     
     neural_css = """
-    /* Neural Processing Theme */
+    /* Complete Neural Processing Theme */
     :root {
         --primary-color: #0f172a;
         --secondary-color: #1e293b;
@@ -1718,17 +1718,6 @@ def create_neural_interface():
         overflow: hidden !important;
     }
     
-    .neural-header::before {
-        content: '🧠⏱️' !important;
-        position: absolute !important;
-        font-size: 6rem !important;
-        opacity: 0.1 !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
-        z-index: 1 !important;
-    }
-    
     .neural-title {
         font-size: 3.5rem !important;
         font-weight: 900 !important;
@@ -1757,12 +1746,6 @@ def create_neural_interface():
         transition: all 0.4s ease !important;
     }
     
-    .neural-card:hover {
-        transform: translateY(-5px) !important;
-        box-shadow: 0 25px 50px rgba(139, 92, 246, 0.3) !important;
-        border-color: var(--neural-color) !important;
-    }
-    
     .neural-button {
         background: linear-gradient(135deg, var(--accent-color) 0%, var(--neural-color) 100%) !important;
         border: none !important;
@@ -1777,11 +1760,6 @@ def create_neural_interface():
         letter-spacing: 1px !important;
     }
     
-    .neural-button:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 15px 40px rgba(139, 92, 246, 0.6) !important;
-    }
-    
     .translation-button {
         background: linear-gradient(135deg, var(--translation-color) 0%, var(--accent-color) 100%) !important;
         border: none !important;
@@ -1794,11 +1772,6 @@ def create_neural_interface():
         box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
         text-transform: uppercase !important;
         letter-spacing: 1px !important;
-    }
-    
-    .translation-button:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 15px 40px rgba(59, 130, 246, 0.6) !important;
     }
     
     .status-neural {
@@ -1821,39 +1794,12 @@ def create_neural_interface():
         position: relative !important;
     }
     
-    .translation-section::before {
-        content: '🌐 NEURAL' !important;
-        position: absolute !important;
-        top: -15px !important;
-        left: 25px !important;
-        background: var(--translation-color) !important;
-        color: white !important;
-        padding: 8px 15px !important;
-        border-radius: 20px !important;
-        font-size: 0.9rem !important;
-        font-weight: bold !important;
-    }
-    
     .timeout-warning {
         background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(239, 68, 68, 0.1) 100%) !important;
         border: 2px solid var(--timeout-color) !important;
         border-radius: 15px !important;
         padding: 20px !important;
         margin: 15px 0 !important;
-        position: relative !important;
-    }
-    
-    .timeout-warning::before {
-        content: '⏱️ TIMEOUT PROTECTION' !important;
-        position: absolute !important;
-        top: -12px !important;
-        left: 15px !important;
-        background: var(--timeout-color) !important;
-        color: white !important;
-        padding: 6px 12px !important;
-        border-radius: 15px !important;
-        font-size: 0.8rem !important;
-        font-weight: bold !important;
     }
     
     .card-header {
@@ -1883,7 +1829,7 @@ def create_neural_interface():
     with gr.Blocks(
         css=neural_css, 
         theme=gr.themes.Base(),
-        title="🧠 Neural Audio Transcription with Timeout Protection"
+        title="🧠 Complete Neural Audio Transcription"
     ) as interface:
         
         # Neural Header
@@ -1894,4 +1840,352 @@ def create_neural_interface():
             <div style="margin-top: 20px;">
                 <span style="background: rgba(139, 92, 246, 0.2); color: #8b5cf6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🧠 NEURAL CNN</span>
                 <span style="background: rgba(6, 182, 212, 0.2); color: #06b6d4; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🔬 SPECTRAL</span>
-                <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">
+                <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">⏱️ 75s TIMEOUT</span>
+                <span style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; padding: 10px 20px; border-radius: 25px; margin: 0 8px; font-size: 1rem; font-weight: 600;">🌐 TRANSLATION</span>
+            </div>
+        </div>
+        """)
+        
+        # System Status
+        status_display = gr.Textbox(
+            label="🧠 Neural System Status",
+            value="Initializing neural transcription system with timeout protection...",
+            interactive=False,
+            elem_classes="status-neural"
+        )
+        
+        # Timeout Warning
+        gr.HTML("""
+        <div class="timeout-warning">
+            <h4 style="color: #f59e0b; margin-bottom: 15px;">⏱️ TIMEOUT PROTECTION ACTIVE</h4>
+            <p style="color: #cbd5e1; margin: 5px 0;">• Each chunk has a 75-second timeout limit</p>
+            <p style="color: #cbd5e1; margin: 5px 0;">• Very noisy chunks will display: "Input Audio Very noisy. Unable to extract details."</p>
+            <p style="color: #cbd5e1; margin: 5px 0;">• Neural preprocessing reduces noise before transcription</p>
+        </div>
+        """)
+        
+        # Main Interface
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.HTML('<div class="neural-card"><div class="card-header">🧠 Neural Control Panel</div>')
+                
+                audio_input = gr.Audio(
+                    label="🎵 Upload Audio File or Record Live",
+                    type="filepath"
+                )
+                
+                language_dropdown = gr.Dropdown(
+                    choices=list(SUPPORTED_LANGUAGES.keys()),
+                    value="🌍 Auto-detect",
+                    label="🌍 Language Selection (150+ Supported)",
+                    info="Includes Burmese, Pashto, Persian, Dzongkha, Tibetan & more"
+                )
+                
+                enhancement_radio = gr.Radio(
+                    choices=[
+                        ("🟢 Light - Neural fast processing", "light"),
+                        ("🟡 Moderate - Neural balanced enhancement", "moderate"), 
+                        ("🔴 Aggressive - Neural maximum processing", "aggressive")
+                    ],
+                    value="moderate",
+                    label="🧠 Neural Enhancement Level",
+                    info="All levels with advanced neural preprocessing"
+                )
+                
+                transcribe_btn = gr.Button(
+                    "🧠 START NEURAL TRANSCRIPTION",
+                    variant="primary",
+                    elem_classes="neural-button",
+                    size="lg"
+                )
+                
+                gr.HTML('</div>')
+            
+            with gr.Column(scale=2):
+                gr.HTML('<div class="neural-card"><div class="card-header">📊 Neural Results</div>')
+                
+                transcription_output = gr.Textbox(
+                    label="📝 Original Transcription",
+                    placeholder="Your neural-enhanced transcription will appear here...",
+                    lines=10,
+                    max_lines=15,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_original_btn = gr.Button("📋 Copy Original Transcription", size="sm")
+                
+                gr.HTML('</div>')
+                
+                # Optional Translation Section
+                gr.HTML("""
+                <div class="translation-section">
+                    <div style="color: #3b82f6; font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; margin-top: 15px;">🌐 Optional Neural Translation</div>
+                    <p style="color: #cbd5e1; margin-bottom: 20px; font-size: 1.1rem;">
+                        Click the button below to translate your transcription to English using neural-enhanced smart text chunking.
+                    </p>
+                </div>
+                """)
+                
+                with gr.Row():
+                    translate_btn = gr.Button(
+                        "🌐 NEURAL TRANSLATION (SMART CHUNKING)",
+                        variant="secondary",
+                        elem_classes="translation-button",
+                        size="lg"
+                    )
+                
+                english_translation_output = gr.Textbox(
+                    label="🌐 English Translation (Neural Enhanced)",
+                    placeholder="Click the translate button above to generate neural-enhanced English translation...",
+                    lines=8,
+                    max_lines=15,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_translation_btn = gr.Button("🌐 Copy Neural Translation", size="sm")
+        
+        # Audio Comparison
+        with gr.Row():
+            with gr.Column():
+                gr.HTML('<div class="neural-card"><div class="card-header">📥 Original Audio</div>')
+                original_audio_player = gr.Audio(
+                    label="Original Audio",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+            
+            with gr.Column():
+                gr.HTML('<div class="neural-card"><div class="card-header">🧠 Neural Enhanced Audio</div>')
+                enhanced_audio_player = gr.Audio(
+                    label="Neural Enhanced Audio (6-Stage Pipeline)",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+        
+        # Reports
+        with gr.Row():
+            with gr.Column():
+                with gr.Accordion("🧠 Neural Enhancement Report", open=False):
+                    enhancement_report = gr.Textbox(
+                        label="Neural Enhancement Report",
+                        lines=20,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+            
+            with gr.Column():
+                with gr.Accordion("📋 Neural Performance Report", open=False):
+                    processing_report = gr.Textbox(
+                        label="Neural Performance Report", 
+                        lines=20,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+        
+        # Neural Features Display
+        gr.HTML("""
+        <div class="neural-card">
+            <div class="card-header">🧠 ADVANCED NEURAL FEATURES</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+                <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%); border: 2px solid rgba(139, 92, 246, 0.3); border-radius: 15px; padding: 20px;">
+                    <h4 style="color: #8b5cf6; margin-bottom: 15px;">🧠 NEURAL PREPROCESSING:</h4>
+                    <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
+                        <li>🧠 In-Script CNN Denoiser (Encoder-Decoder + Attention)</li>
+                        <li>🔬 Adaptive Spectral Subtraction</li>
+                        <li>🎵 Multi-Band Frequency Processing</li>
+                        <li>🎤 Voice Activity Detection & Enhancement</li>
+                        <li>📊 Real-time Quality Assessment (SNR Analysis)</li>
+                        <li>🔧 6-Stage Enhancement Pipeline</li>
+                    </ul>
+                </div>
+                <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(239, 68, 68, 0.1) 100%); border: 2px solid rgba(245, 158, 11, 0.3); border-radius: 15px; padding: 20px;">
+                    <h4 style="color: #f59e0b; margin-bottom: 15px;">⏱️ TIMEOUT PROTECTION:</h4>
+                    <ul style="color: #cbd5e1; line-height: 1.6; list-style: none; padding: 0;">
+                        <li>⏱️ 75-Second Per-Chunk Timeout</li>
+                        <li>🔍 Pre-processing Noise Detection</li>
+                        <li>⚠️ "Very noisy audio" Messages</li>
+                        <li>🛡️ Graceful Timeout Handling</li>
+                        <li>📊 Processing Success Rate Tracking</li>
+                        <li>🎯 Adaptive Quality-Based Processing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        """)
+        
+        # System Monitoring
+        gr.HTML('<div class="neural-card"><div class="card-header">🧠 Neural System Monitoring</div>')
+        
+        log_display = gr.Textbox(
+            label="",
+            value="🧠 Neural system ready with timeout protection - advanced preprocessing enabled...",
+            interactive=False,
+            lines=15,
+            max_lines=20,
+            elem_classes="log-neural",
+            show_label=False
+        )
+        
+        with gr.Row():
+            refresh_logs_btn = gr.Button("🔄 Refresh Neural Logs", size="sm")
+            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
+        
+        gr.HTML('</div>')
+        
+        # Footer
+        gr.HTML("""
+        <div style="text-align: center; margin-top: 50px; padding: 40px; background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%); border-radius: 20px; border: 2px solid var(--accent-color);">
+            <h3 style="color: #8b5cf6; margin-bottom: 20px;">🧠 NEURAL AUDIO TRANSCRIPTION + TIMEOUT PROTECTION</h3>
+            <p style="color: #cbd5e1; margin-bottom: 15px;">Advanced Neural Preprocessing • 75s Timeout Safety • Noise Detection • Optional Smart Translation</p>
+            <p style="color: #10b981; font-weight: 700;">🧠 NEURAL: CNN DENOISER | ⏱️ TIMEOUT: 75s PROTECTION | 🌐 TRANSLATION: ENHANCED</p>
+            <div style="margin-top: 25px; padding: 20px; background: rgba(139, 92, 246, 0.1); border-radius: 15px;">
+                <h4 style="color: #8b5cf6; margin-bottom: 10px;">🔧 COMPLETE NEURAL FEATURES IMPLEMENTED:</h4>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🧠 Neural Denoising:</strong> In-Script CNN with Encoder-Decoder Architecture</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🔬 Advanced Processing:</strong> 6-Stage Enhancement Pipeline</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>⏱️ Timeout Protection:</strong> 75-Second Safety with Noise Messages</p>
+                <p style="color: #cbd5e1; margin: 5px 0;"><strong>🌐 Smart Translation:</strong> Neural-Enhanced Chunking</p>
+            </div>
+        </div>
+        """)
+        
+        # Event Handlers
+        transcribe_btn.click(
+            fn=transcribe_audio_neural,
+            inputs=[audio_input, language_dropdown, enhancement_radio],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        # Translation button handler
+        translate_btn.click(
+            fn=translate_transcription_neural,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
+            show_progress=True
+        )
+        
+        copy_original_btn.click(
+            fn=lambda text: text,
+            inputs=[transcription_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        copy_translation_btn.click(
+            fn=lambda text: text,
+            inputs=[english_translation_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        # Log Management
+        refresh_logs_btn.click(
+            fn=get_current_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def clear_neural_logs():
+            global log_capture
+            if log_capture:
+                with log_capture.lock:
+                    log_capture.log_buffer.clear()
+            return "🧠 Neural logs cleared - system ready with timeout protection"
+        
+        clear_logs_btn.click(
+            fn=clear_neural_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        # Auto-refresh logs
+        def auto_refresh_neural_logs():
+            return get_current_logs()
+        
+        timer = gr.Timer(value=4, active=True)
+        timer.tick(
+            fn=auto_refresh_neural_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        # Initialize system
+        interface.load(
+            fn=initialize_neural_transcriber,
+            inputs=[],
+            outputs=[status_display]
+        )
+    
+    return interface
+
+def main():
+    """Launch the complete neural transcription system with timeout protection"""
+    
+    if "/path/to/your/" in MODEL_PATH:
+        print("="*80)
+        print("🧠 COMPLETE NEURAL SYSTEM CONFIGURATION REQUIRED")
+        print("="*80)
+        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
+        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
+        print("="*80)
+        return
+    
+    # Setup neural logging
+    setup_neural_logging()
+    
+    print("🧠 Launching COMPLETE Neural Audio Transcription System...")
+    print("="*80)
+    print("🧠 ADVANCED NEURAL PREPROCESSING FEATURES:")
+    print("   🧠 Neural Network Denoiser: IN-SCRIPT CNN (Encoder-Decoder + Attention)")
+    print("   🔬 Advanced Spectral Subtraction: Adaptive Parameters")
+    print("   🎵 Multi-Band Processing: 4-Band Frequency Analysis")
+    print("   🎤 Voice Activity Detection: Multi-Feature Analysis")
+    print("   📊 Quality Detection: Real-time SNR Assessment")
+    print("   🔧 6-Stage Enhancement Pipeline: Complete Audio Cleanup")
+    print("="*80)
+    print("⏱️ TIMEOUT PROTECTION SYSTEM:")
+    print(f"   ⏱️ Chunk Timeout: {CHUNK_TIMEOUT} seconds per chunk")
+    print("   🔍 Pre-processing Quality Detection: SNR-Based Assessment")
+    print("   ⚠️ Timeout Message: 'Input Audio Very noisy. Unable to extract details.'")
+    print("   🛡️ Graceful Degradation: Continues with remaining chunks")
+    print("   📊 Success Rate Tracking: Comprehensive reporting")
+    print("="*80)
+    print("🌐 NEURAL TRANSLATION FEATURES:")
+    print("   👤 User Control: Translation only when user clicks button")
+    print("   📝 Neural Smart Chunking: Enhanced with preprocessing insights")
+    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
+    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
+    print("   🧠 Neural Enhancement: Advanced preprocessing integration")
+    print("="*80)
+    print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
+    print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
+    print("   • All major world languages and regional variants")
+    print("   • Smart English detection with neural preprocessing")
+    print("="*80)
+    print("🔧 TECHNICAL SPECIFICATIONS:")
+    print("   🧠 Neural Architecture: Encoder-Decoder with Attention Mechanism")
+    print("   🎯 Processing Stages: 6-Stage Advanced Enhancement Pipeline")
+    print("   ⚡ Memory Management: GPU-Optimized with Intelligent Cleanup")
+    print("   🛡️ Error Handling: Comprehensive with Timeout Protection")
+    print("   📊 Quality Metrics: SNR + Multi-Feature Analysis")
+    print("="*80)
+    
+    try:
+        interface = create_neural_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception
