@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-RELIABLE AUDIO TRANSCRIPTION WITH PROVEN PREPROCESSING TECHNIQUES
-================================================================
+COMPLETE SPEECH-PRESERVING AUDIO TRANSCRIPTION WITH TIMEOUT
+==========================================================
 
 PROVEN TECHNIQUES FOR SPEECH CLARITY:
 - Traditional signal processing methods that preserve speech
@@ -12,7 +12,7 @@ PROVEN TECHNIQUES FOR SPEECH CLARITY:
 - 75-second timeout with noise detection messages
 
 Author: Advanced AI Audio Processing System
-Version: Speech-Preserving 11.0
+Version: Complete Speech-Preserving 11.0
 """
 
 import os
@@ -40,7 +40,6 @@ import re
 import nltk
 from scipy.ndimage import median_filter
 from scipy.signal import butter, filtfilt, wiener
-import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
 # CRITICAL FIX: Disable torch dynamo to prevent compilation errors with Gemma3n
@@ -127,51 +126,26 @@ class SpeechPreservingVAD:
         try:
             print("🎤 Detecting voice activity with speech preservation...")
             
-            # Energy-based detection
-            frame_energy = librosa.feature.rms(
-                y=audio, 
-                frame_length=self.frame_length, 
-                hop_length=self.hop_length
-            )[0]
-            
-            # Spectral centroid for voice characteristics
-            spectral_centroids = librosa.feature.spectral_centroid(
-                y=audio, 
-                sr=self.sample_rate,
-                hop_length=self.hop_length
-            )
-            
-            # Zero crossing rate for speech vs noise discrimination
-            zcr = librosa.feature.zero_crossing_rate(
-                audio, 
-                frame_length=self.frame_length, 
-                hop_length=self.hop_length
-            )[0]
-            
-            # Spectral rolloff for voice detection
-            spectral_rolloff = librosa.feature.spectral_rolloff(
-                y=audio, 
-                sr=self.sample_rate,
-                hop_length=self.hop_length
-            )
+            frame_energy = librosa.feature.rms(y=audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
+            spectral_centroids = librosa.feature.spectral_centroid(y=audio, sr=self.sample_rate, hop_length=self.hop_length)[0]
+            zcr = librosa.feature.zero_crossing_rate(audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=audio, sr=self.sample_rate, hop_length=self.hop_length)[0]
             
             # Conservative thresholds to preserve speech
-            energy_threshold = np.percentile(frame_energy, 25)  # More conservative
-            centroid_threshold = np.percentile(spectral_centroids, 20)  # More conservative
-            zcr_threshold = np.percentile(zcr, 75)  # More conservative
-            rolloff_threshold = np.percentile(spectral_rolloff, 30)  # More conservative
+            energy_threshold = np.percentile(frame_energy, 25)
+            centroid_threshold = np.percentile(spectral_centroids, 20)
+            zcr_threshold = np.percentile(zcr, 75)
+            rolloff_threshold = np.percentile(spectral_rolloff, 30)
             
             # Combine features conservatively (prefer to keep speech)
             voice_activity = (
-                (frame_energy > energy_threshold) |  # OR instead of AND to preserve speech
+                (frame_energy > energy_threshold) |
                 ((spectral_centroids > centroid_threshold) & (zcr < zcr_threshold)) |
                 (spectral_rolloff > rolloff_threshold)
             )
             
-            # Light smoothing to prevent choppy voice detection
             voice_activity = median_filter(voice_activity.astype(float), size=3) > 0.3
             
-            # Statistics
             voice_percentage = np.mean(voice_activity) * 100
             stats = {
                 'voice_percentage': voice_percentage,
@@ -184,7 +158,6 @@ class SpeechPreservingVAD:
             
         except Exception as e:
             print(f"❌ Voice activity detection failed: {e}")
-            # Return all-voice to preserve speech
             return np.ones(len(audio) // self.hop_length, dtype=bool), {}
 
 class SpeechPreservingProcessor:
@@ -199,7 +172,6 @@ class SpeechPreservingProcessor:
         """Apply pre-emphasis filter to balance the frequency spectrum"""
         try:
             print("🔧 Applying pre-emphasis filter...")
-            # Pre-emphasis: y[n] = x[n] - alpha * x[n-1]
             emphasized = np.append(audio[0], audio[1:] - alpha * audio[:-1])
             return emphasized.astype(np.float32)
         except Exception as e:
@@ -211,38 +183,29 @@ class SpeechPreservingProcessor:
         try:
             print("🔬 Applying speech-preserving spectral subtraction...")
             
-            # Use shorter FFT for better temporal resolution
-            n_fft = 1024  # Shorter FFT to preserve speech transients
+            n_fft = 1024
             hop_length = 256
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Conservative noise estimation from quieter frames
             frame_energy = np.sum(magnitude, axis=0)
-            quiet_threshold = np.percentile(frame_energy, 30)  # Conservative
+            quiet_threshold = np.percentile(frame_energy, 30)
             quiet_frames = magnitude[:, frame_energy < quiet_threshold]
             
             if quiet_frames.shape[1] > 0:
                 noise_estimate = np.median(quiet_frames, axis=1, keepdims=True)
             else:
-                # Fallback: use first few frames
                 noise_estimate = np.median(magnitude[:, :5], axis=1, keepdims=True)
             
-            # Very conservative spectral subtraction
-            alpha = 1.5  # Much lower than aggressive settings
-            beta = 0.1   # Higher spectral floor to preserve speech
+            alpha = 1.5  # Conservative
+            beta = 0.1   # High spectral floor
             
-            # Spectral subtraction
             cleaned_magnitude = magnitude - alpha * noise_estimate
-            
-            # High spectral floor to prevent speech distortion
             spectral_floor = beta * magnitude
             cleaned_magnitude = np.maximum(cleaned_magnitude, spectral_floor)
             
-            # Reconstruct audio
             cleaned_stft = cleaned_magnitude * np.exp(1j * phase)
             cleaned_audio = librosa.istft(cleaned_stft, hop_length=hop_length)
             
@@ -257,16 +220,11 @@ class SpeechPreservingProcessor:
         try:
             print("🎵 Applying speech-optimized filtering...")
             
-            # Human speech is primarily in 85Hz to 8kHz range
-            # Design filters that preserve speech characteristics
-            
-            # High-pass filter to remove low-frequency noise (preserve speech fundamentals)
-            high_cutoff = 85  # Preserve low speech frequencies
+            high_cutoff = 85
             high_filter = butter(4, high_cutoff, btype='high', fs=self.sample_rate, output='sos')
             audio = filtfilt(high_filter, audio)
             
-            # Low-pass filter to remove high-frequency noise (preserve consonants)
-            low_cutoff = 8000  # Preserve high speech frequencies
+            low_cutoff = 8000
             low_filter = butter(4, low_cutoff, btype='low', fs=self.sample_rate, output='sos')
             audio = filtfilt(low_filter, audio)
             
@@ -281,14 +239,13 @@ class SpeechPreservingProcessor:
         try:
             print("🔇 Applying gentle noise reduction...")
             
-            # Use noisereduce with speech-preserving settings
             reduced_audio = nr.reduce_noise(
                 y=audio,
                 sr=self.sample_rate,
-                stationary=False,  # Better for varying noise
-                prop_decrease=noise_reduction_strength,  # Conservative reduction
-                n_std_thresh_stationary=1.5,  # Conservative threshold
-                n_std_thresh_nonstationary=1.8  # Conservative threshold
+                stationary=False,
+                prop_decrease=noise_reduction_strength,
+                n_std_thresh_stationary=1.5,
+                n_std_thresh_nonstationary=1.8
             )
             
             return reduced_audio.astype(np.float32)
@@ -302,9 +259,7 @@ class SpeechPreservingProcessor:
         try:
             print("📊 Applying light dynamic range processing...")
             
-            # Light compression to even out volume levels without distortion
-            # Calculate RMS in windows
-            window_size = int(0.1 * self.sample_rate)  # 100ms windows
+            window_size = int(0.1 * self.sample_rate)
             hop_size = window_size // 2
             
             processed_audio = audio.copy()
@@ -314,10 +269,9 @@ class SpeechPreservingProcessor:
                 rms = np.sqrt(np.mean(window**2))
                 
                 if rms > 0:
-                    # Very light compression
                     target_rms = 0.1
                     if rms > target_rms:
-                        ratio = 0.7  # Light compression ratio
+                        ratio = 0.7
                         gain = (target_rms / rms) ** (1 - ratio)
                         processed_audio[i:i + window_size] *= gain
             
@@ -332,14 +286,11 @@ class SpeechPreservingProcessor:
         try:
             print("🎤 Enhancing voice regions...")
             
-            # Detect voice activity
             vad_result, vad_stats = self.vad.detect_voice_activity(audio)
             
-            # Expand VAD to audio samples
             hop_length = 256
             vad_expanded = np.repeat(vad_result, hop_length)
             
-            # Ensure same length
             if len(vad_expanded) > len(audio):
                 vad_expanded = vad_expanded[:len(audio)]
             elif len(vad_expanded) < len(audio):
@@ -348,15 +299,12 @@ class SpeechPreservingProcessor:
             enhanced_audio = audio.copy()
             voice_regions = vad_expanded.astype(bool)
             
-            # Very light enhancement of voice regions
             if np.any(voice_regions):
-                # Slight gain boost for voice regions (very conservative)
                 enhanced_audio[voice_regions] *= 1.1
             
-            # Very slight attenuation of non-voice regions
             noise_regions = ~voice_regions
             if np.any(noise_regions):
-                enhanced_audio[noise_regions] *= 0.8  # Light attenuation
+                enhanced_audio[noise_regions] *= 0.8
             
             return enhanced_audio.astype(np.float32), vad_stats
             
@@ -367,10 +315,8 @@ class SpeechPreservingProcessor:
     def detect_audio_quality(self, audio: np.ndarray) -> Tuple[str, float, Dict]:
         """Detect audio quality using reliable metrics"""
         try:
-            # Calculate SNR estimate
             signal_power = np.mean(audio ** 2)
             
-            # Estimate noise from quiet regions
             frame_energy = librosa.feature.rms(y=audio, frame_length=1024, hop_length=512)[0]
             noise_threshold = np.percentile(frame_energy, 25)
             noise_frames = frame_energy[frame_energy < noise_threshold]
@@ -380,16 +326,14 @@ class SpeechPreservingProcessor:
                 if noise_power > 0:
                     snr = 10 * np.log10(signal_power / noise_power)
                 else:
-                    snr = 50  # Very clean
+                    snr = 50
             else:
-                snr = 30  # Good quality
+                snr = 30
             
-            # Calculate additional metrics
             zero_crossing_rate = np.mean(librosa.feature.zero_crossing_rate(audio)[0])
-            spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=self.sample_rate))
-            spectral_bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=self.sample_rate))
+            spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=self.sample_rate)[0])
+            spectral_bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=self.sample_rate)[0])
             
-            # Determine quality level
             if snr > 25:
                 quality = "excellent"
             elif snr > 15:
@@ -423,7 +367,6 @@ class SpeechPreservingProcessor:
         try:
             print(f"🎵 Starting speech-preserving enhancement ({enhancement_level})...")
             
-            # Detect original quality
             quality, snr, quality_stats = self.detect_audio_quality(audio)
             stats.update(quality_stats)
             stats['original_quality'] = quality
@@ -432,27 +375,26 @@ class SpeechPreservingProcessor:
             
             print(f"📊 Original audio quality: {quality} (SNR: {snr:.2f} dB)")
             
-            # Stage 1: Pre-emphasis (always apply for better frequency balance)
+            # Stage 1: Pre-emphasis
             audio = self.pre_emphasis_filter(audio)
             
             # Stage 2: Speech band filtering
             audio = self.speech_band_filtering(audio)
             
-            # Stage 3: Gentle noise reduction (strength based on quality and level)
+            # Stage 3: Gentle noise reduction
             if enhancement_level == "light":
                 noise_strength = 0.4
             elif enhancement_level == "moderate":
                 noise_strength = 0.6
-            else:  # aggressive
+            else:
                 noise_strength = 0.7
             
-            # Adjust based on detected quality
             if quality in ["poor", "very_noisy"]:
-                noise_strength = min(noise_strength + 0.1, 0.8)  # Cap at 0.8
+                noise_strength = min(noise_strength + 0.1, 0.8)
             
             audio = self.gentle_noise_reduction(audio, noise_strength)
             
-            # Stage 4: Speech-preserving spectral subtraction (only for noisy audio)
+            # Stage 4: Speech-preserving spectral subtraction
             if quality in ["poor", "very_noisy"] or enhancement_level == "aggressive":
                 audio = self.speech_preserving_spectral_subtraction(audio)
             
@@ -464,11 +406,10 @@ class SpeechPreservingProcessor:
             # Stage 6: Light dynamic range processing
             audio = self.dynamic_range_processing(audio)
             
-            # Stage 7: Final normalization (preserve dynamics)
+            # Stage 7: Final normalization
             audio = librosa.util.normalize(audio)
             audio = np.clip(audio, -0.99, 0.99)
             
-            # Calculate final statistics
             final_quality, final_snr, final_stats = self.detect_audio_quality(audio)
             stats['final_quality'] = final_quality
             stats['final_snr'] = final_snr
@@ -490,7 +431,6 @@ class AudioHandler:
     
     @staticmethod
     def convert_to_file(audio_input, target_sr=SAMPLE_RATE):
-        """FIXED: Convert any audio input to a temporary file path"""
         if audio_input is None:
             raise ValueError("No audio input provided")
         
@@ -544,7 +484,6 @@ class AudioHandler:
     
     @staticmethod
     def numpy_to_temp_file(audio_array, sample_rate=SAMPLE_RATE):
-        """FIXED: Convert numpy array to temporary file for model processing"""
         try:
             if not isinstance(audio_array, np.ndarray):
                 raise ValueError("Input must be numpy array")
@@ -568,7 +507,6 @@ class AudioHandler:
     
     @staticmethod
     def cleanup_temp_file(file_path):
-        """FIXED: Safe cleanup of temporary files"""
         try:
             if file_path and os.path.exists(file_path):
                 if file_path.startswith('/tmp') or 'tmp' in file_path:
@@ -578,8 +516,6 @@ class AudioHandler:
             print(f"⚠️ Temp file cleanup warning: {e}")
 
 class OptimizedMemoryManager:
-    """OPTIMIZED: Streamlined memory management for speed"""
-    
     @staticmethod
     def quick_memory_check():
         if not torch.cuda.is_available():
@@ -607,8 +543,6 @@ class OptimizedMemoryManager:
             print(f"📊 {context} - GPU: {allocated:.1f}GB/{total:.1f}GB")
 
 class SmartTextChunker:
-    """Smart text chunking for efficient translation preserving meaning"""
-    
     def __init__(self, max_chunk_size=MAX_TRANSLATION_CHUNK_SIZE, min_chunk_size=MIN_CHUNK_SIZE):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
@@ -809,7 +743,6 @@ class SpeechPreservingTranscriber:
         return chunks
     
     def transcribe_chunk_with_timeout(self, audio_chunk: np.ndarray, language: str = "auto") -> str:
-        """Transcribe chunk with 75-second timeout and noise detection"""
         if self.model is None or self.processor is None:
             return "[MODEL_NOT_LOADED]"
         
@@ -821,11 +754,9 @@ class SpeechPreservingTranscriber:
                 if not OptimizedMemoryManager.quick_memory_check():
                     OptimizedMemoryManager.fast_cleanup()
             
-            # Check audio quality before processing
             quality, snr, _ = self.audio_processor.detect_audio_quality(audio_chunk)
             print(f"🔍 Chunk quality: {quality} (SNR: {snr:.1f} dB)")
             
-            # Convert numpy array to temporary file
             temp_audio_file = AudioHandler.numpy_to_temp_file(audio_chunk, SAMPLE_RATE)
             self.temp_files.append(temp_audio_file)
             
@@ -878,7 +809,6 @@ class SpeechPreservingTranscriber:
                     del inputs, generation
                     return transcription.strip()
             
-            # Set up timeout handling
             result_queue = queue.Queue()
             
             def timeout_transcribe():
@@ -888,19 +818,16 @@ class SpeechPreservingTranscriber:
                 except Exception as e:
                     result_queue.put(("error", str(e)))
             
-            # Start transcription thread
             transcribe_thread = threading.Thread(target=timeout_transcribe)
             transcribe_thread.daemon = True
             transcribe_thread.start()
             
-            # Wait for result with timeout
             transcribe_thread.join(timeout=CHUNK_TIMEOUT)
             
             if transcribe_thread.is_alive():
                 print(f"⏱️ Chunk processing timed out after {CHUNK_TIMEOUT} seconds")
                 return "Input Audio Very noisy. Unable to extract details."
             
-            # Get result from queue
             try:
                 status, result = result_queue.get_nowait()
                 if status == "success":
@@ -933,7 +860,6 @@ class SpeechPreservingTranscriber:
         try:
             print("🌐 Starting text translation...")
             
-            # Check if text is already in English
             english_indicators = [
                 "the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you",
                 "have", "be", "this", "from", "they", "will", "been", "has", "were", "said", "each", "which", "can",
@@ -1059,7 +985,6 @@ class SpeechPreservingTranscriber:
     
     def transcribe_with_speech_enhancement(self, audio_path: str, language: str = "auto", 
                                          enhancement_level: str = "moderate") -> Tuple[str, str, str, Dict]:
-        """SPEECH-PRESERVING: Transcription with proven enhancement techniques"""
         try:
             print(f"🎵 Starting speech-preserving transcription...")
             print(f"🔧 Enhancement level: {enhancement_level}")
@@ -1073,7 +998,7 @@ class SpeechPreservingTranscriber:
                 duration_seconds = audio_info.frames / audio_info.samplerate
                 print(f"⏱️ Audio duration: {duration_seconds:.2f} seconds")
                 
-                max_duration = 900  # 15 minutes
+                max_duration = 900
                 if duration_seconds > max_duration:
                     print(f"⚠️ Processing first {max_duration/60:.1f} minutes")
                     audio_array, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True, duration=max_duration)
@@ -1084,12 +1009,10 @@ class SpeechPreservingTranscriber:
                 print(f"❌ Audio loading failed: {e}")
                 return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
             
-            # SPEECH-PRESERVING: Traditional enhancement
             enhanced_audio, stats = self.audio_processor.comprehensive_speech_enhancement(
                 audio_array, enhancement_level
             )
             
-            # Save processed audio
             enhanced_path = tempfile.mktemp(suffix="_speech_enhanced.wav")
             original_path = tempfile.mktemp(suffix="_original.wav")
             
@@ -1102,7 +1025,6 @@ class SpeechPreservingTranscriber:
             if not chunks:
                 return "❌ No valid chunks created", original_path, enhanced_path, stats
             
-            # Process chunks with timeout handling
             transcriptions = []
             successful = 0
             timeout_count = 0
@@ -1180,10 +1102,8 @@ class SpeechPreservingTranscriber:
             else:
                 return f"❌ No valid transcriptions from {len(transcriptions)} chunks."
         
-        # Merge valid transcriptions
         merged_text = " ".join(valid_transcriptions)
         
-        # Add comprehensive summary
         total_chunks = len(transcriptions)
         success_rate = (len(valid_transcriptions) / total_chunks) * 100
         
@@ -1423,7 +1343,7 @@ Enhancement Level: {level.upper()}
 • Traditional Preprocessing: ✅ ENABLED
 • Pre-emphasis Filter: ✅ APPLIED (α=0.97)
 • Speech Band Filtering: ✅ 85Hz-8kHz
-• Spectral Subtraction: ✅ CONSERVATIVE (α=1.5, β=0.1)
+• Spectral Subtraction: ✅ CONSERVATIVE (α=1.5, β=0.1)  
 • Gentle Noise Reduction: ✅ STRENGTH {0.4 if level == 'light' else 0.6 if level == 'moderate' else 0.7}
 
 🎤 VOICE ACTIVITY ANALYSIS:
@@ -1539,10 +1459,9 @@ Generated: {timestamp}
     return report
 
 def create_speech_interface():
-    """Create speech-preserving interface"""
+    """Create complete speech-preserving interface"""
     
     speech_css = """
-    /* Speech-Preserving Theme */
     :root {
         --primary-color: #0f172a;
         --secondary-color: #1e293b;
@@ -1808,4 +1727,152 @@ def create_speech_interface():
         # Reports
         with gr.Row():
             with gr.Column():
-                with gr.Accordion("
+                with gr.Accordion("🎵 Speech Enhancement Report", open=False):
+                    enhancement_report = gr.Textbox(
+                        label="Speech Enhancement Report",
+                        lines=18,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+            
+            with gr.Column():
+                with gr.Accordion("📋 Speech Processing Report", open=False):
+                    processing_report = gr.Textbox(
+                        label="Speech Processing Report", 
+                        lines=18,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+        
+        # System Monitoring
+        gr.HTML('<div class="speech-card"><div class="card-header">🎵 Speech System Monitoring</div>')
+        
+        log_display = gr.Textbox(
+            label="",
+            value="🎵 Speech-preserving system ready - no distortion guaranteed...",
+            interactive=False,
+            lines=12,
+            max_lines=16,
+            elem_classes="log-speech",
+            show_label=False
+        )
+        
+        with gr.Row():
+            refresh_logs_btn = gr.Button("🔄 Refresh Speech Logs", size="sm")
+            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
+        
+        gr.HTML('</div>')
+        
+        # Event Handlers
+        transcribe_btn.click(
+            fn=transcribe_audio_speech_preserving,
+            inputs=[audio_input, language_dropdown, enhancement_radio],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        translate_btn.click(
+            fn=translate_transcription_speech,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
+            show_progress=True
+        )
+        
+        copy_original_btn.click(
+            fn=lambda text: text,
+            inputs=[transcription_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        copy_translation_btn.click(
+            fn=lambda text: text,
+            inputs=[english_translation_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        refresh_logs_btn.click(
+            fn=get_current_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def clear_speech_logs():
+            global log_capture
+            if log_capture:
+                with log_capture.lock:
+                    log_capture.log_buffer.clear()
+            return "🎵 Speech logs cleared - system ready"
+        
+        clear_logs_btn.click(
+            fn=clear_speech_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def auto_refresh_speech_logs():
+            return get_current_logs()
+        
+        timer = gr.Timer(value=3, active=True)
+        timer.tick(
+            fn=auto_refresh_speech_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        interface.load(
+            fn=initialize_speech_transcriber,
+            inputs=[],
+            outputs=[status_display]
+        )
+    
+    return interface
+
+def main():
+    """Launch the complete speech-preserving transcription system"""
+    
+    if "/path/to/your/" in MODEL_PATH:
+        print("="*80)
+        print("🎵 SPEECH-PRESERVING SYSTEM CONFIGURATION REQUIRED")
+        print("="*80)
+        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
+        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
+        print("="*80)
+        return
+    
+    setup_speech_logging()
+    
+    print("🎵 Launching SPEECH-PRESERVING Audio Transcription System...")
+    print("="*80)
+    print("🎵 SPEECH PRESERVATION FEATURES:")
+    print("   ✅ Traditional signal processing (NO neural distortion)")
+    print("   ✅ Pre-emphasis filtering for frequency balance")
+    print("   ✅ Speech band filtering (85Hz-8kHz preservation)")
+    print("   ✅ Conservative spectral subtraction (α=1.5, β=0.1)")
+    print("   ✅ Gentle noise reduction (noisereduce library)")
+    print("   ✅ Light dynamic range processing")
+    print("   ✅ Conservative voice activity detection")
+    print("="*80)
+    print("🔧 SPEECH QUALITY GUARANTEES:")
+    print("   🎵 NO speech distortion from neural networks")
+    print("   🎵 Speech characteristics fully preserved")
+    print("   🎵 Human speech frequency range optimized (85Hz-8kHz)")
+    print("   🎵 Conservative parameters to avoid artifacts")
+    print("   🎵 Proven signal processing techniques only")
+    print("="*80)
+    print("⏱️ TIMEOUT PROTECTION:")
+    print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk")
+    print("   ⏱️ Automatic noise detection")
+    print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
+    print("   ⏱️ Graceful degradation for problematic audio")
+    print("="*80)
+    print("🌐 OPTIONAL TRANSLATION FEATURES:")
+    print("   👤 User Control: Translation only when user clicks button")
+    print("   📝 Smart Chunking: Preserves meaning with sentence overlap")
+    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
+    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
+    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
+    print("="*80)
+    print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
+    print("   • Burmese,
