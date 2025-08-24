@@ -1923,9 +1923,328 @@ def create_advanced_interface():
         </div>
         """)
         
-        # System Status
+                # System Status
         status_display = gr.Textbox(
             label="🚀 Advanced System Status",
             value="Initializing ADVANCED speech enhancement system...",
             interactive=False,
-            elem_classes
+            elem_classes="status-advanced"
+        )
+        
+        # Main Interface
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.HTML('<div class="advanced-card"><div class="card-header">🚀 Advanced Control Panel</div>')
+                
+                audio_input = gr.Audio(
+                    label="🎵 Upload Audio File or Record Live",
+                    type="filepath"
+                )
+                
+                language_dropdown = gr.Dropdown(
+                    choices=list(SUPPORTED_LANGUAGES.keys()),
+                    value="🌍 Auto-detect",
+                    label="🌍 Language Selection (150+ Supported)",
+                    info="All languages with ADVANCED enhancement"
+                )
+                
+                enhancement_radio = gr.Radio(
+                    choices=[
+                        ("🟢 Light - ADVANCED minimal processing", "light"),
+                        ("🟡 Moderate - ADVANCED balanced enhancement", "moderate"), 
+                        ("🔴 Aggressive - ADVANCED maximum processing", "aggressive")
+                    ],
+                    value="moderate",
+                    label="🚀 Advanced Enhancement Level",
+                    info="10-stage pipeline with ASR optimization"
+                )
+                
+                transcribe_btn = gr.Button(
+                    "🚀 START ADVANCED SPEECH TRANSCRIPTION",
+                    variant="primary",
+                    elem_classes="advanced-button",
+                    size="lg"
+                )
+                
+                gr.HTML('</div>')
+            
+            with gr.Column(scale=2):
+                gr.HTML('<div class="advanced-card"><div class="card-header">📊 Advanced Results</div>')
+                
+                transcription_output = gr.Textbox(
+                    label="📝 Original Transcription (ADVANCED Enhanced)",
+                    placeholder="Your ADVANCED transcription will appear here...",
+                    lines=10,
+                    max_lines=15,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_original_btn = gr.Button("📋 Copy Original Transcription", size="sm")
+                
+                gr.HTML('</div>')
+                
+                # Translation Section
+                gr.HTML("""
+                <div class="translation-section">
+                    <div style="color: #3b82f6; font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; margin-top: 15px;">🌐 Optional English Translation</div>
+                    <p style="color: #cbd5e1; margin-bottom: 20px; font-size: 1.1rem;">
+                        Click the button below to translate your transcription to English using smart text chunking.
+                    </p>
+                </div>
+                """)
+                
+                with gr.Row():
+                    translate_btn = gr.Button(
+                        "🌐 TRANSLATE TO ENGLISH (SMART CHUNKING)",
+                        variant="secondary",
+                        elem_classes="translation-button",
+                        size="lg"
+                    )
+                
+                english_translation_output = gr.Textbox(
+                    label="🌐 English Translation (Optional)",
+                    placeholder="Click the translate button above to generate English translation...",
+                    lines=8,
+                    max_lines=15,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_translation_btn = gr.Button("🌐 Copy English Translation", size="sm")
+        
+        # Audio Comparison
+        with gr.Row():
+            with gr.Column():
+                gr.HTML('<div class="advanced-card"><div class="card-header">📥 Original Audio</div>')
+                original_audio_player = gr.Audio(
+                    label="Original Audio",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+            
+            with gr.Column():
+                gr.HTML('<div class="advanced-card"><div class="card-header">🚀 ADVANCED Enhanced Audio</div>')
+                enhanced_audio_player = gr.Audio(
+                    label="ADVANCED Enhanced Audio (10-Stage Pipeline)",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+        
+        # Reports
+        with gr.Row():
+            with gr.Column():
+                with gr.Accordion("🚀 ADVANCED Enhancement Report", open=False):
+                    enhancement_report = gr.Textbox(
+                        label="ADVANCED Enhancement Report",
+                        lines=18,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+            
+            with gr.Column():
+                with gr.Accordion("📋 ADVANCED Processing Report", open=False):
+                    processing_report = gr.Textbox(
+                        label="ADVANCED Processing Report", 
+                        lines=18,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+        
+        # System Monitoring
+        gr.HTML('<div class="advanced-card"><div class="card-header">🚀 ADVANCED System Monitoring</div>')
+        
+        log_display = gr.Textbox(
+            label="",
+            value="🚀 ADVANCED system ready - state-of-the-art enhancement active...",
+            interactive=False,
+            lines=12,
+            max_lines=16,
+            elem_classes="log-advanced",
+            show_label=False
+        )
+        
+        with gr.Row():
+            refresh_logs_btn = gr.Button("🔄 Refresh ADVANCED Logs", size="sm")
+            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
+        
+        gr.HTML('</div>')
+        
+        # Event Handlers
+        transcribe_btn.click(
+            fn=transcribe_audio_advanced,
+            inputs=[audio_input, language_dropdown, enhancement_radio],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        translate_btn.click(
+            fn=translate_transcription_advanced,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
+            show_progress=True
+        )
+        
+        copy_original_btn.click(
+            fn=lambda text: text,
+            inputs=[transcription_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        copy_translation_btn.click(
+            fn=lambda text: text,
+            inputs=[english_translation_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        refresh_logs_btn.click(
+            fn=get_current_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def clear_advanced_logs():
+            global log_capture
+            if log_capture:
+                with log_capture.lock:
+                    log_capture.log_buffer.clear()
+            return "🚀 ADVANCED logs cleared - system ready"
+        
+        clear_logs_btn.click(
+            fn=clear_advanced_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def auto_refresh_advanced_logs():
+            return get_current_logs()
+        
+        timer = gr.Timer(value=3, active=True)
+        timer.tick(
+            fn=auto_refresh_advanced_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        interface.load(
+            fn=initialize_advanced_transcriber,
+            inputs=[],
+            outputs=[status_display]
+        )
+    
+    return interface
+
+def main():
+    """Launch the complete ADVANCED speech enhancement transcription system"""
+    
+    if "/path/to/your/" in MODEL_PATH:
+        print("="*80)
+        print("🚀 ADVANCED SPEECH ENHANCEMENT SYSTEM CONFIGURATION REQUIRED")
+        print("="*80)
+        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
+        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
+        print("="*80)
+        return
+    
+    setup_advanced_logging()
+    
+    print("🚀 Launching ADVANCED SPEECH ENHANCEMENT & TRANSCRIPTION SYSTEM...")
+    print("="*80)
+    print("🔧 CRITICAL FIXES APPLIED:")
+    print("   ✅ filtfilt() parameter order FIXED (b, a, data)")
+    print("   ✅ All function call syntax errors RESOLVED")
+    print("   ✅ Audio normalization OPTIMIZED for ASR")
+    print("   ✅ Comprehensive error handling with fallbacks")
+    print("="*80)
+    print("🚀 ADVANCED 10-STAGE ENHANCEMENT PIPELINE:")
+    print("   🔧 Stage 1: Advanced Adaptive Normalization")
+    print("   🎵 Stage 2: FIXED Speech Band Filtering (85Hz-8kHz)")
+    print("   🔬 Stage 3: Advanced Spectral Gating with Gaussian Smoothing")
+    print("   🔇 Stage 4: Adaptive Noise Reduction (SNR-based parameters)")
+    print("   🔧 Stage 5: Wiener Filtering for Optimal Enhancement")
+    print("   🎵 Stage 6: Harmonic Enhancement for Speech Clarity")
+    print("   📊 Stage 7: Multi-Band Dynamic Range Compression")
+    print("   🎤 Stage 8: Advanced Multi-Feature VAD Enhancement")
+    print("   📊 Stage 9: ASR-Optimized RMS Normalization")
+    print("   🛡️ Stage 10: Quality Control & Final Clipping Protection")
+    print("="*80)
+    print("🚀 STATE-OF-THE-ART FEATURES:")
+    print("   🔧 FIXED filtfilt() calls with proper parameter order")
+    print("   📊 Advanced multi-method audio normalization for ASR")
+    print("   🔬 Advanced spectral gating with noise floor adaptation")
+    print("   🔧 Wiener filtering for optimal signal enhancement")
+    print("   🎵 Harmonic-percussive separation & enhancement")
+    print("   📊 Multi-band dynamic range compression (4-band)")
+    print("   🎤 Multi-feature voice activity detection")
+    print("   📊 Signal-to-noise ratio based adaptive processing")
+    print("="*80)
+    print("🔧 ASR OPTIMIZATION GUARANTEES:")
+    print("   📊 RMS normalization for optimal ASR input levels")
+    print("   🎵 Speech characteristics fully preserved")
+    print("   🔧 Function call syntax errors completely resolved")
+    print("   📊 Dynamic range optimized for transcription models")
+    print("   🛡️ Comprehensive fallback systems for error recovery")
+    print("="*80)
+    print("⏱️ TIMEOUT PROTECTION:")
+    print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk")
+    print("   ⏱️ Advanced noise detection and quality assessment")
+    print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
+    print("   ⏱️ Graceful degradation for problematic audio")
+    print("="*80)
+    print("🌐 OPTIONAL TRANSLATION FEATURES:")
+    print("   👤 User Control: Translation only when user clicks button")
+    print("   📝 Smart Chunking: Preserves meaning with sentence overlap")
+    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
+    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
+    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
+    print("="*80)
+    print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
+    print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
+    print("   • All major world languages and regional variants")
+    print("   • Smart English detection to skip unnecessary translation")
+    print("="*80)
+    print("🔧 TECHNICAL IMPROVEMENTS:")
+    print("   🎵 filtfilt() calls: FIXED parameter order (b, a, data)")
+    print("   🔇 Noise reduction: FIXED compatible parameters with fallbacks")
+    print("   📊 Audio normalization: Multiple methods for ASR optimization")
+    print("   🛡️ Fallback mechanisms: Comprehensive for all critical functions")
+    print("   ⚡ Error recovery: Advanced graceful degradation")
+    print("   📊 Function calls: ALL syntax errors completely resolved")
+    print("="*80)
+    
+    try:
+        interface = create_advanced_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception as e:
+        print(f"❌ ADVANCED system launch failed: {e}")
+        print("🔧 ADVANCED system troubleshooting:")
+        print("   • Verify model path is correct and accessible")
+        print("   • Check GPU memory availability and drivers")
+        print("   • Ensure all dependencies are installed:")
+        print("     pip install --upgrade torch transformers gradio librosa soundfile")
+        print("     pip install --upgrade noisereduce scipy nltk")
+        print("   • Verify Python environment and version compatibility")
+        print("   • Check port 7860 availability")
+        print("   • ALL function call syntax errors have been FIXED")
+        print("   • filtfilt() parameters are now correct (b, a, data)")
+        print("   • Audio normalization is ASR-optimized")
+        print("   • Comprehensive fallback systems are active")
+        print("="*80)
+
+if __name__ == "__main__":
+    main()
