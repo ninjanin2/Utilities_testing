@@ -1917,4 +1917,908 @@ def initialize_user_selectable_transcriber():
             except Exception as e2:
                 error_msg = f"❌ User-selectable system failure: {str(e2)}"
                 print(error_msg)
-                return
+                return error_msg
+    return "✅ USER-SELECTABLE system already active!"
+
+def transcribe_audio_user_selectable(audio_input, language_choice, enhancement_level, 
+                                   spectral_methods, frequency_methods, time_frequency_methods, 
+                                   preprocessing_methods, advanced_methods, progress=gr.Progress()):
+    global transcriber
+    
+    if audio_input is None:
+        return "❌ Please upload an audio file or record audio.", None, None, "", ""
+    
+    if transcriber is None:
+        return "❌ System not initialized. Please wait for startup.", None, None, "", ""
+    
+    # Organize selected methods
+    selected_methods = {
+        'spectral_methods': spectral_methods or [],
+        'frequency_methods': frequency_methods or [],
+        'time_frequency_methods': time_frequency_methods or [],
+        'preprocessing_methods': preprocessing_methods or [],
+        'advanced_methods': advanced_methods or []
+    }
+    
+    total_selected = sum(len(methods) for methods in selected_methods.values())
+    
+    if total_selected == 0:
+        return "❌ Please select at least one preprocessing method.", None, None, "", ""
+    
+    start_time = time.time()
+    print(f"🚀 Starting USER-SELECTABLE transcription with {total_selected} selected methods...")
+    print(f"🌍 Language: {language_choice}")
+    print(f"🔧 Enhancement: {enhancement_level}")
+    print(f"⏱️ Timeout per chunk: {CHUNK_TIMEOUT} seconds")
+    
+    progress(0.1, desc="Initializing USER-SELECTABLE processing...")
+    
+    temp_audio_path = None
+    
+    try:
+        temp_audio_path = AudioHandler.convert_to_file(audio_input, SAMPLE_RATE)
+        
+        progress(0.3, desc="Applying USER-SELECTED speech enhancement methods...")
+        
+        language_code = SUPPORTED_LANGUAGES.get(language_choice, "auto")
+        
+        progress(0.5, desc="USER-SELECTABLE transcription with timeout protection...")
+        
+        transcription, original_path, enhanced_path, enhancement_stats = transcriber.transcribe_with_user_selected_enhancement(
+            temp_audio_path, selected_methods, language_code, enhancement_level
+        )
+        
+        progress(0.9, desc="Generating USER-SELECTABLE reports...")
+        
+        enhancement_report = create_user_selectable_enhancement_report(enhancement_stats, enhancement_level, selected_methods)
+        
+        processing_time = time.time() - start_time
+        processing_report = create_user_selectable_processing_report(
+            temp_audio_path, language_choice, enhancement_level, 
+            processing_time, len(transcription.split()) if isinstance(transcription, str) else 0,
+            enhancement_stats, selected_methods
+        )
+        
+        progress(1.0, desc="USER-SELECTABLE processing complete!")
+        
+        print(f"✅ USER-SELECTABLE transcription completed in {processing_time:.2f}s")
+        print(f"📊 Output: {len(transcription.split()) if isinstance(transcription, str) else 0} words")
+        
+        return transcription, original_path, enhanced_path, enhancement_report, processing_report
+        
+    except Exception as e:
+        error_msg = f"❌ User-selectable system error: {str(e)}"
+        print(error_msg)
+        OptimizedMemoryManager.fast_cleanup()
+        return error_msg, None, None, "", ""
+    finally:
+        if temp_audio_path:
+            AudioHandler.cleanup_temp_file(temp_audio_path)
+
+def translate_transcription_user_selectable(transcription_text, progress=gr.Progress()):
+    global transcriber
+    
+    if not transcription_text or transcription_text.strip() == "":
+        return "❌ No transcription text to translate. Please transcribe audio first."
+    
+    if transcriber is None:
+        return "❌ System not initialized. Please wait for system startup."
+    
+    if transcription_text.startswith("❌") or transcription_text.startswith("["):
+        return "❌ Cannot translate error messages or system messages. Please provide valid transcription text."
+    
+    progress(0.1, desc="Preparing text for user-selectable translation...")
+    
+    try:
+        text_to_translate = transcription_text
+        if "\n\n[User-Selected Processing Summary:" in text_to_translate:
+            text_to_translate = text_to_translate.split("\n\n[User-Selected Processing Summary:")[0].strip()
+        
+        progress(0.3, desc="Creating smart text chunks...")
+        
+        start_time = time.time()
+        translated_text = transcriber.translate_text_chunks(text_to_translate)
+        translation_time = time.time() - start_time
+        
+        progress(0.9, desc="Finalizing user-selectable translation...")
+        
+        if not translated_text.startswith('['):
+            translated_text += f"\n\n[User-Selectable Translation completed in {translation_time:.2f}s using smart chunking]"
+        
+        progress(1.0, desc="User-selectable translation complete!")
+        
+        print(f"✅ User-selectable translation completed in {translation_time:.2f}s")
+        
+        return translated_text
+        
+    except Exception as e:
+        error_msg = f"❌ User-selectable translation failed: {str(e)}"
+        print(error_msg)
+        OptimizedMemoryManager.fast_cleanup()
+        return error_msg
+
+def create_user_selectable_enhancement_report(stats: Dict, level: str, selected_methods: Dict) -> str:
+    if not stats:
+        return "⚠️ Enhancement statistics not available"
+    
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Count selected methods
+    method_counts = {key: len(methods) for key, methods in selected_methods.items()}
+    total_methods = sum(method_counts.values())
+    
+    report = f"""
+🚀 USER-SELECTABLE SPEECH ENHANCEMENT REPORT
+===========================================
+Timestamp: {timestamp}
+Enhancement Level: {level.upper()}
+Total Selected Methods: {total_methods}
+
+📊 USER-SELECTED QUALITY ANALYSIS:
+• Initial SNR: {stats.get('initial_snr', 0):.2f} dB
+• Final SNR: {stats.get('final_snr', 0):.2f} dB
+• Total SNR Improvement: {stats.get('total_snr_improvement', 0):.2f} dB
+• Audio Duration: {stats.get('original_length', 0):.2f} seconds
+• Final RMS Energy: {stats.get('final_rms', 0):.4f}
+
+🚀 USER-SELECTED METHODS BY CATEGORY:
+
+🔬 SPECTRAL DOMAIN METHODS ({method_counts['spectral_methods']} selected):
+"""
+    
+    spectral_available = [
+        "Spectral Subtraction", "Multi-Band Spectral Subtraction", "Wiener Filtering",
+        "MMSE-STSA Estimator", "MMSE-LSA Estimator", "OM-LSA Estimator"
+    ]
+    
+    for method in spectral_available:
+        status = "✅ APPLIED" if method in selected_methods.get('spectral_methods', []) else "❌ NOT SELECTED"
+        report += f"• {method}: {status}\n"
+    
+    report += f"""
+🎵 FREQUENCY DOMAIN METHODS ({method_counts['frequency_methods']} selected):
+"""
+    
+    frequency_available = ["Comprehensive Frequency Filtering", "Adaptive Filtering"]
+    
+    for method in frequency_available:
+        status = "✅ APPLIED" if method in selected_methods.get('frequency_methods', []) else "❌ NOT SELECTED"
+        report += f"• {method}: {status}\n"
+    
+    report += f"""
+🔬 TIME-FREQUENCY DOMAIN METHODS ({method_counts['time_frequency_methods']} selected):
+"""
+    
+    time_freq_available = ["DA-STFT Processing", "Time-Frequency Masking", "Frame-Based Processing"]
+    
+    for method in time_freq_available:
+        status = "✅ APPLIED" if method in selected_methods.get('time_frequency_methods', []) else "❌ NOT SELECTED"
+        report += f"• {method}: {status}\n"
+    
+    report += f"""
+📊 PREPROCESSING & NORMALIZATION ({method_counts['preprocessing_methods']} selected):
+"""
+    
+    preprocessing_available = [
+        "Z-score Min-Max Normalization", "Dynamic Range Compression", "Noise Gating",
+        "Temporal Smoothing", "Frame Averaging"
+    ]
+    
+    for method in preprocessing_available:
+        status = "✅ APPLIED" if method in selected_methods.get('preprocessing_methods', []) else "❌ NOT SELECTED"
+        report += f"• {method}: {status}\n"
+    
+    report += f"""
+🔬 ADVANCED METHODS ({method_counts['advanced_methods']} selected):
+"""
+    
+    advanced_available = [
+        "Signal Subspace Approach", "Noise Profile Analysis", "SNR Enhancement", "Advanced VAD Enhancement"
+    ]
+    
+    for method in advanced_available:
+        status = "✅ APPLIED" if method in selected_methods.get('advanced_methods', []) else "❌ NOT SELECTED"
+        report += f"• {method}: {status}\n"
+    
+    report += f"""
+🎤 VOICE ACTIVITY ANALYSIS:
+• Voice Percentage: {stats.get('voice_percentage', 0):.1f}%
+• Voice Score: {stats.get('voice_score', 0):.3f}
+• SNR Estimate: {stats.get('snr_estimate', 0):.2f} dB
+
+⏱️ TIMEOUT PROTECTION:
+• Chunk Timeout: {CHUNK_TIMEOUT} seconds
+• User-Selected Noise Detection: ✅ ACTIVE
+• Timeout Messages: ✅ ENABLED
+
+🏆 USER-SELECTABLE ENHANCEMENT SCORE: {min(100, total_methods * 5)}/100
+
+🔧 TECHNICAL SPECIFICATIONS:
+• Processing Method: USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
+• Selected Methods: {total_methods} out of 20 available techniques
+• ASR Optimization: Final normalization applied
+• Quality Detection: Multi-feature analysis
+• Memory Management: GPU-optimized with cleanup
+• Error Recovery: Comprehensive fallback systems
+"""
+    return report
+
+def create_user_selectable_processing_report(audio_path: str, language: str, enhancement: str, 
+                                           processing_time: float, word_count: int, stats: Dict, selected_methods: Dict) -> str:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        file_size = os.path.getsize(audio_path) / (1024 * 1024)
+        audio_info = f"File size: {file_size:.2f} MB"
+    except:
+        audio_info = "File info unavailable"
+    
+    device_info = f"GPU: {torch.cuda.get_device_name()}" if torch.cuda.is_available() else "CPU Processing"
+    
+    initial_snr = stats.get('initial_snr', 0)
+    final_snr = stats.get('final_snr', 0)
+    snr_improvement = stats.get('total_snr_improvement', 0)
+    voice_percentage = stats.get('voice_percentage', 0)
+    final_rms = stats.get('final_rms', 0)
+    
+    # Count selected methods
+    method_counts = {key: len(methods) for key, methods in selected_methods.items()}
+    total_methods = sum(method_counts.values())
+    
+    report = f"""
+🚀 USER-SELECTABLE SPEECH TRANSCRIPTION REPORT
+=============================================
+Generated: {timestamp}
+
+🎵 USER-SELECTABLE AUDIO PROCESSING:
+• Source File: {os.path.basename(audio_path)}
+• {audio_info}
+• Target Language: {language}
+• Enhancement Level: {enhancement.upper()}
+• Total Selected Methods: {total_methods} out of 20 available
+
+⚡ PERFORMANCE METRICS:
+• Processing Time: {processing_time:.2f} seconds
+• Words Generated: {word_count}
+• Processing Speed: {word_count/processing_time:.1f} words/second
+• Processing Device: {device_info}
+
+🚀 USER-SELECTABLE CONFIGURATION:
+• Model: Gemma 3N E4B-IT (User-Selectable Enhanced)
+• Chunk Size: {CHUNK_SECONDS} seconds (User-Selectable Optimized)
+• Chunk Timeout: {CHUNK_TIMEOUT} seconds per chunk
+• Overlap: {OVERLAP_SECONDS} seconds (Context Preserving)
+• Enhancement Method: USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
+
+📊 USER-SELECTED QUALITY TRANSFORMATION:
+• Initial SNR: {initial_snr:.2f} dB → {final_snr:.2f} dB
+• Total SNR Improvement: {snr_improvement:.2f} dB
+• Voice Activity: {voice_percentage:.1f}% of audio
+• Final RMS Level: {final_rms:.4f} (ASR-Optimized)
+• Enhancement Rating: {'EXCEPTIONAL' if snr_improvement > 10 else 'EXCELLENT' if snr_improvement > 5 else 'VERY GOOD' if snr_improvement > 2 else 'GOOD' if snr_improvement > 0 else 'MAINTAINED'}
+
+🚀 USER-SELECTED METHODS BREAKDOWN:
+• Spectral Domain: {method_counts['spectral_methods']}/6 methods selected
+• Frequency Domain: {method_counts['frequency_methods']}/2 methods selected
+• Time-Frequency: {method_counts['time_frequency_methods']}/3 methods selected
+• Preprocessing: {method_counts['preprocessing_methods']}/5 methods selected
+• Advanced Methods: {method_counts['advanced_methods']}/4 methods selected
+
+⏱️ TIMEOUT & NOISE HANDLING:
+• Timeout Protection: ✅ {CHUNK_TIMEOUT}s per chunk
+• User-Selected Quality Detection: ✅ Applied methods analysis
+• Timeout Messages: ✅ "Input Audio Very noisy. Unable to extract details."
+• Fallback Systems: ✅ User-selected error recovery
+
+🌐 TRANSLATION FEATURES:
+• Translation Control: ✅ USER-INITIATED (Optional)
+• Smart Text Chunking: ✅ ENABLED
+• Context Preservation: ✅ SENTENCE OVERLAP
+• Processing Method: ✅ USER-SELECTABLE PIPELINE
+
+📊 USER-SELECTABLE SYSTEM STATUS:
+• Enhancement Method: ✅ USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
+• Selected Methods: ✅ {total_methods} METHODS APPLIED
+• ASR Optimization: ✅ FINAL NORMALIZATION
+• Timeout Protection: ✅ ACTIVE (75s per chunk)
+• Quality Detection: ✅ USER-SELECTED ANALYSIS
+• Memory Optimization: ✅ GPU-AWARE CLEANUP
+• Error Recovery: ✅ USER-SELECTED FALLBACK SYSTEMS
+
+✅ STATUS: USER-SELECTABLE TRANSCRIPTION COMPLETED
+🚀 AUDIO ENHANCEMENT: USER-CONTROLLED CHECKBOX PIPELINE
+⏱️ TIMEOUT PROTECTION: 75-SECOND CHUNK SAFETY
+🔧 PREPROCESSING: USER-SELECTED METHODS ONLY
+📊 ASR OPTIMIZATION: CHECKBOX-CONTROLLED NORMALIZATION
+🎯 RELIABILITY: USER-SELECTABLE PROCESSING WITH COMPREHENSIVE FALLBACKS
+"""
+    return report
+
+def create_user_selectable_interface():
+    """Create user-selectable speech enhancement interface with checkbox controls"""
+    
+    user_selectable_css = """
+    :root {
+        --primary-color: #0f172a;
+        --secondary-color: #1e293b;
+        --accent-color: #06b6d4;
+        --checkbox-color: #10b981;
+        --success-color: #10b981;
+        --timeout-color: #f59e0b;
+        --translation-color: #3b82f6;
+        --bg-primary: #020617;
+        --bg-secondary: #0f172a;
+        --bg-tertiary: #1e293b;
+        --text-primary: #f8fafc;
+        --text-secondary: #cbd5e1;
+        --border-color: #475569;
+    }
+    
+    .gradio-container {
+        background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%) !important;
+        font-family: 'Inter', sans-serif !important;
+        color: var(--text-primary) !important;
+        min-height: 100vh !important;
+    }
+    
+    .user-selectable-header {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 15%, #06b6d4 30%, #10b981 45%, #f59e0b 60%, #3b82f6 75%, #8b5cf6 90%, #ec4899 100%) !important;
+        padding: 60px 40px !important;
+        border-radius: 30px !important;
+        text-align: center !important;
+        margin-bottom: 50px !important;
+        box-shadow: 0 30px 60px rgba(6, 182, 212, 0.4) !important;
+        position: relative !important;
+        overflow: hidden !important;
+    }
+    
+    .user-selectable-title {
+        font-size: 4rem !important;
+        font-weight: 900 !important;
+        color: white !important;
+        margin-bottom: 20px !important;
+        text-shadow: 0 5px 15px rgba(6, 182, 212, 0.6) !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+    
+    .user-selectable-subtitle {
+        font-size: 1.5rem !important;
+        color: rgba(255,255,255,0.95) !important;
+        font-weight: 600 !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+    
+    .user-selectable-card {
+        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%) !important;
+        border: 3px solid var(--accent-color) !important;
+        border-radius: 25px !important;
+        padding: 35px !important;
+        margin: 25px 0 !important;
+        box-shadow: 0 20px 40px rgba(6, 182, 212, 0.3) !important;
+        transition: all 0.4s ease !important;
+    }
+    
+    .checkbox-group {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%) !important;
+        border: 2px solid var(--checkbox-color) !important;
+        border-radius: 20px !important;
+        padding: 25px !important;
+        margin: 20px 0 !important;
+    }
+    
+    .user-selectable-button {
+        background: linear-gradient(135deg, var(--accent-color) 0%, var(--checkbox-color) 100%) !important;
+        border: none !important;
+        border-radius: 20px !important;
+        color: white !important;
+        font-weight: 800 !important;
+        font-size: 1.3rem !important;
+        padding: 20px 40px !important;
+        transition: all 0.4s ease !important;
+        box-shadow: 0 10px 30px rgba(6, 182, 212, 0.5) !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1.5px !important;
+    }
+    
+    .translation-button {
+        background: linear-gradient(135deg, var(--translation-color) 0%, var(--accent-color) 100%) !important;
+        border: none !important;
+        border-radius: 18px !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 1.2rem !important;
+        padding: 18px 35px !important;
+        transition: all 0.4s ease !important;
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.5) !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1.2px !important;
+    }
+    
+    .status-user-selectable {
+        background: linear-gradient(135deg, var(--success-color), #059669) !important;
+        color: white !important;
+        padding: 18px 30px !important;
+        border-radius: 15px !important;
+        font-weight: 700 !important;
+        text-align: center !important;
+        box-shadow: 0 10px 25px rgba(16, 185, 129, 0.5) !important;
+        border: 3px solid rgba(16, 185, 129, 0.4) !important;
+    }
+    
+    .translation-section {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(6, 182, 212, 0.15) 100%) !important;
+        border: 3px solid var(--translation-color) !important;
+        border-radius: 25px !important;
+        padding: 30px !important;
+        margin: 25px 0 !important;
+        position: relative !important;
+    }
+    
+    .card-header {
+        color: var(--accent-color) !important;
+        font-size: 1.7rem !important;
+        font-weight: 800 !important;
+        margin-bottom: 30px !important;
+        padding-bottom: 18px !important;
+        border-bottom: 4px solid var(--accent-color) !important;
+    }
+    
+    .checkbox-header {
+        color: var(--checkbox-color) !important;
+        font-size: 1.4rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 20px !important;
+        padding-bottom: 12px !important;
+        border-bottom: 3px solid var(--checkbox-color) !important;
+    }
+    
+    .log-user-selectable {
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+        border: 3px solid var(--accent-color) !important;
+        border-radius: 18px !important;
+        color: var(--text-secondary) !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 1rem !important;
+        line-height: 1.8 !important;
+        padding: 25px !important;
+        max-height: 450px !important;
+        overflow-y: auto !important;
+        white-space: pre-wrap !important;
+    }
+    """
+    
+    with gr.Blocks(
+        css=user_selectable_css, 
+        theme=gr.themes.Base(),
+        title="🚀 User-Selectable Speech Enhancement & Transcription"
+    ) as interface:
+        
+        # User-Selectable Header
+        gr.HTML("""
+        <div class="user-selectable-header">
+            <h1 class="user-selectable-title">🚀 USER-SELECTABLE SPEECH ENHANCEMENT</h1>
+            <p class="user-selectable-subtitle">Checkbox-Controlled Preprocessing • 20 Available Methods • Custom Pipeline • ASR-Optimized • 75s Timeout</p>
+            <div style="margin-top: 25px;">
+                <span style="background: rgba(6, 182, 212, 0.25); color: #06b6d4; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">☑️ CHECKBOX CONTROL</span>
+                <span style="background: rgba(16, 185, 129, 0.25); color: #10b981; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">🔧 20 METHODS</span>
+                <span style="background: rgba(59, 130, 246, 0.25); color: #3b82f6; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">📊 CUSTOM PIPELINE</span>
+                <span style="background: rgba(245, 158, 11, 0.25); color: #f59e0b; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">⏱️ 75s TIMEOUT</span>
+            </div>
+        </div>
+        """)
+        
+        # System Status
+        status_display = gr.Textbox(
+            label="🚀 User-Selectable System Status",
+            value="Initializing USER-SELECTABLE speech enhancement system with checkbox controls...",
+            interactive=False,
+            elem_classes="status-user-selectable"
+        )
+        
+        # Main Interface
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 User-Selectable Control Panel</div>')
+                
+                audio_input = gr.Audio(
+                    label="🎵 Upload Audio File or Record Live",
+                    type="filepath"
+                )
+                
+                language_dropdown = gr.Dropdown(
+                    choices=list(SUPPORTED_LANGUAGES.keys()),
+                    value="🌍 Auto-detect",
+                    label="🌍 Language Selection (150+ Supported)",
+                    info="All languages with USER-SELECTABLE enhancement"
+                )
+                
+                enhancement_radio = gr.Radio(
+                    choices=[
+                        ("🟢 Light - USER-SELECTABLE minimal processing", "light"),
+                        ("🟡 Moderate - USER-SELECTABLE balanced enhancement", "moderate"), 
+                        ("🔴 Aggressive - USER-SELECTABLE maximum processing", "aggressive")
+                    ],
+                    value="moderate",
+                    label="🚀 User-Selectable Enhancement Level",
+                    info="Enhancement level affects selected method parameters"
+                )
+                
+                gr.HTML('</div>')
+                
+                # Checkbox Groups for Method Selection
+                gr.HTML('<div class="user-selectable-card"><div class="card-header">☑️ Select Preprocessing Methods</div>')
+                
+                # Spectral Domain Methods
+                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Spectral Domain Methods (6 available)</div>')
+                spectral_methods = gr.CheckboxGroup(
+                    choices=[
+                        "Spectral Subtraction",
+                        "Multi-Band Spectral Subtraction", 
+                        "Wiener Filtering",
+                        "MMSE-STSA Estimator",
+                        "MMSE-LSA Estimator",
+                        "OM-LSA Estimator"
+                    ],
+                    value=["Spectral Subtraction", "Wiener Filtering"],  # Default selections
+                    label="🔬 Spectral Domain Methods",
+                    info="Advanced spectral processing techniques"
+                )
+                gr.HTML('</div>')
+                
+                # Frequency Domain Methods
+                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🎵 Frequency Domain Methods (2 available)</div>')
+                frequency_methods = gr.CheckboxGroup(
+                    choices=[
+                        "Comprehensive Frequency Filtering",
+                        "Adaptive Filtering"
+                    ],
+                    value=["Comprehensive Frequency Filtering"],  # Default selection
+                    label="🎵 Frequency Domain Methods",
+                    info="Frequency-based filtering techniques"
+                )
+                gr.HTML('</div>')
+                
+                # Time-Frequency Domain Methods
+                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Time-Frequency Methods (3 available)</div>')
+                time_frequency_methods = gr.CheckboxGroup(
+                    choices=[
+                        "DA-STFT Processing",
+                        "Time-Frequency Masking",
+                        "Frame-Based Processing"
+                    ],
+                    value=["Frame-Based Processing"],  # Default selection
+                    label="🔬 Time-Frequency Methods",
+                    info="Advanced time-frequency processing"
+                )
+                gr.HTML('</div>')
+                
+                # Preprocessing & Normalization Methods
+                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">📊 Preprocessing & Normalization (5 available)</div>')
+                preprocessing_methods = gr.CheckboxGroup(
+                    choices=[
+                        "Z-score Min-Max Normalization",
+                        "Dynamic Range Compression",
+                        "Noise Gating",
+                        "Temporal Smoothing",
+                        "Frame Averaging"
+                    ],
+                    value=["Dynamic Range Compression", "Noise Gating"],  # Default selections
+                    label="📊 Preprocessing Methods",
+                    info="Signal conditioning and normalization"
+                )
+                gr.HTML('</div>')
+                
+                # Advanced Methods
+                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Advanced Methods (4 available)</div>')
+                advanced_methods = gr.CheckboxGroup(
+                    choices=[
+                        "Signal Subspace Approach",
+                        "Noise Profile Analysis",
+                        "SNR Enhancement",
+                        "Advanced VAD Enhancement"
+                    ],
+                    value=["Advanced VAD Enhancement"],  # Default selection
+                    label="🔬 Advanced Methods",
+                    info="State-of-the-art enhancement techniques"
+                )
+                gr.HTML('</div>')
+                
+                transcribe_btn = gr.Button(
+                    "🚀 START USER-SELECTABLE TRANSCRIPTION",
+                    variant="primary",
+                    elem_classes="user-selectable-button",
+                    size="lg"
+                )
+                
+                gr.HTML('</div>')
+            
+            with gr.Column(scale=2):
+                gr.HTML('<div class="user-selectable-card"><div class="card-header">📊 User-Selectable Results</div>')
+                
+                transcription_output = gr.Textbox(
+                    label="📝 Original Transcription (USER-SELECTED Enhanced)",
+                    placeholder="Your USER-SELECTABLE transcription will appear here...",
+                    lines=12,
+                    max_lines=18,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_original_btn = gr.Button("📋 Copy Original Transcription", size="sm")
+                
+                gr.HTML('</div>')
+                
+                # Translation Section
+                gr.HTML("""
+                <div class="translation-section">
+                    <div style="color: #3b82f6; font-size: 1.5rem; font-weight: 800; margin-bottom: 25px; margin-top: 18px;">🌐 Optional English Translation</div>
+                    <p style="color: #cbd5e1; margin-bottom: 25px; font-size: 1.2rem;">
+                        Click the button below to translate your transcription to English using smart text chunking.
+                    </p>
+                </div>
+                """)
+                
+                with gr.Row():
+                    translate_btn = gr.Button(
+                        "🌐 TRANSLATE TO ENGLISH (SMART CHUNKING)",
+                        variant="secondary",
+                        elem_classes="translation-button",
+                        size="lg"
+                    )
+                
+                english_translation_output = gr.Textbox(
+                    label="🌐 English Translation (Optional)",
+                    placeholder="Click the translate button above to generate English translation...",
+                    lines=10,
+                    max_lines=18,
+                    interactive=False,
+                    show_copy_button=True
+                )
+                
+                copy_translation_btn = gr.Button("🌐 Copy English Translation", size="sm")
+        
+        # Audio Comparison
+        with gr.Row():
+            with gr.Column():
+                gr.HTML('<div class="user-selectable-card"><div class="card-header">📥 Original Audio</div>')
+                original_audio_player = gr.Audio(
+                    label="Original Audio",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+            
+            with gr.Column():
+                gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 USER-SELECTABLE Enhanced Audio</div>')
+                enhanced_audio_player = gr.Audio(
+                    label="USER-SELECTABLE Enhanced Audio (Custom Checkbox Pipeline)",
+                    interactive=False
+                )
+                gr.HTML('</div>')
+        
+        # Reports
+        with gr.Row():
+            with gr.Column():
+                with gr.Accordion("🚀 USER-SELECTABLE Enhancement Report", open=False):
+                    enhancement_report = gr.Textbox(
+                        label="USER-SELECTABLE Enhancement Report",
+                        lines=20,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+            
+            with gr.Column():
+                with gr.Accordion("📋 USER-SELECTABLE Processing Report", open=False):
+                    processing_report = gr.Textbox(
+                        label="USER-SELECTABLE Processing Report", 
+                        lines=20,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+        
+        # System Monitoring
+        gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 USER-SELECTABLE System Monitoring</div>')
+        
+        log_display = gr.Textbox(
+            label="",
+            value="🚀 USER-SELECTABLE system ready - checkbox controls active...",
+            interactive=False,
+            lines=14,
+            max_lines=20,
+            elem_classes="log-user-selectable",
+            show_label=False
+        )
+        
+        with gr.Row():
+            refresh_logs_btn = gr.Button("🔄 Refresh USER-SELECTABLE Logs", size="sm")
+            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
+        
+        gr.HTML('</div>')
+        
+        # Event Handlers
+        transcribe_btn.click(
+            fn=transcribe_audio_user_selectable,
+            inputs=[audio_input, language_dropdown, enhancement_radio, 
+                   spectral_methods, frequency_methods, time_frequency_methods, 
+                   preprocessing_methods, advanced_methods],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        translate_btn.click(
+            fn=translate_transcription_user_selectable,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
+            show_progress=True
+        )
+        
+        copy_original_btn.click(
+            fn=lambda text: text,
+            inputs=[transcription_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        copy_translation_btn.click(
+            fn=lambda text: text,
+            inputs=[english_translation_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        refresh_logs_btn.click(
+            fn=get_current_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def clear_user_selectable_logs():
+            global log_capture
+            if log_capture:
+                with log_capture.lock:
+                    log_capture.log_buffer.clear()
+            return "🚀 USER-SELECTABLE logs cleared - system ready"
+        
+        clear_logs_btn.click(
+            fn=clear_user_selectable_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def auto_refresh_user_selectable_logs():
+            return get_current_logs()
+        
+        timer = gr.Timer(value=3, active=True)
+        timer.tick(
+            fn=auto_refresh_user_selectable_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        interface.load(
+            fn=initialize_user_selectable_transcriber,
+            inputs=[],
+            outputs=[status_display]
+        )
+    
+    return interface
+
+def main():
+    """Launch the complete USER-SELECTABLE speech enhancement transcription system"""
+    
+    if "/path/to/your/" in MODEL_PATH:
+        print("="*80)
+        print("🚀 USER-SELECTABLE SPEECH ENHANCEMENT SYSTEM CONFIGURATION REQUIRED")
+        print("="*80)
+        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
+        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
+        print("="*80)
+        return
+    
+    setup_user_selectable_logging()
+    
+    print("🚀 Launching USER-SELECTABLE SPEECH ENHANCEMENT & TRANSCRIPTION SYSTEM...")
+    print("="*80)
+    print("☑️ USER-SELECTABLE CHECKBOX FEATURES - ALL METHODS AVAILABLE:")
+    print("="*80)
+    print("🔬 SPECTRAL DOMAIN METHODS (6 checkbox options):")
+    print("   ☑️ Spectral Subtraction")
+    print("   ☑️ Multi-Band Spectral Subtraction (MBSS)")
+    print("   ☑️ Wiener Filtering with optimal parameters")
+    print("   ☑️ MMSE Short-Time Spectral Amplitude (MMSE-STSA) Estimator")
+    print("   ☑️ MMSE Log-Spectral Amplitude (MMSE-LSA) Estimator")
+    print("   ☑️ Optimally-Modified Log-Spectral Amplitude (OM-LSA) Estimator")
+    print("="*80)
+    print("🎵 FREQUENCY DOMAIN METHODS (2 checkbox options):")
+    print("   ☑️ Comprehensive Frequency Filtering (FIXED 85Hz-7900Hz)")
+    print("   ☑️ Adaptive Filtering with LMS algorithm")
+    print("="*80)
+    print("🔬 TIME-FREQUENCY DOMAIN METHODS (3 checkbox options):")
+    print("   ☑️ Differentiable Adaptive Short-Time Fourier Transform (DA-STFT)")
+    print("   ☑️ Time-Frequency Masking for noise isolation")
+    print("   ☑️ Frame-Based Processing with overlap-add")
+    print("="*80)
+    print("📊 PREPROCESSING & NORMALIZATION (5 checkbox options):")
+    print("   ☑️ Z-score Min-Max Normalization for enhanced feature extraction")
+    print("   ☑️ Dynamic Range Compression with attack/release times")
+    print("   ☑️ Noise Gating with adaptive thresholds")
+    print("   ☑️ Temporal Smoothing to reduce transient noise")
+    print("   ☑️ Frame Averaging to improve Signal-to-Noise Ratio")
+    print("="*80)
+    print("🔬 ADVANCED METHODS (4 checkbox options):")
+    print("   ☑️ Signal Subspace Approach (SSA) with SVD decomposition")
+    print("   ☑️ Noise Profile Analysis with targeted reduction")
+    print("   ☑️ Signal-to-Noise Ratio (SNR) Enhancement")
+    print("   ☑️ Advanced VAD Enhancement with multi-feature detection")
+    print("="*80)
+    print("🚀 USER-SELECTABLE FEATURES:")
+    print("   👤 Checkbox Control: Users select which methods to apply")
+    print("   🔧 Custom Pipeline: Only selected methods are executed")
+    print("   📊 Method Reports: Detailed breakdown of applied techniques")
+    print("   ⚡ Efficiency: Skip unused methods for faster processing")
+    print("   🎯 Flexibility: Mix and match techniques for optimal results")
+    print("="*80)
+    print("⏱️ TIMEOUT PROTECTION:")
+    print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk")
+    print("   ⏱️ User-selected quality detection and assessment")
+    print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
+    print("   ⏱️ Graceful degradation for problematic audio")
+    print("="*80)
+    print("🌐 OPTIONAL TRANSLATION FEATURES:")
+    print("   👤 User Control: Translation only when user clicks button")
+    print("   📝 Smart Chunking: Preserves meaning with sentence overlap")
+    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
+    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
+    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
+    print("="*80)
+    print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
+    print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
+    print("   • All major world languages and regional variants")
+    print("   • Smart English detection to skip unnecessary translation")
+    print("="*80)
+    print("🚀 USER-SELECTABLE ADVANTAGES:")
+    print("   ☑️ Complete Control: Users decide which methods to use")
+    print("   ⚡ Optimized Performance: Only selected methods consume resources")
+    print("   🎯 Targeted Processing: Focus on specific enhancement needs")
+    print("   📊 Transparent Reports: See exactly which methods were applied")
+    print("   🔧 Flexible Combinations: Create custom processing pipelines")
+    print("   💡 Educational: Learn which methods work best for your audio")
+    print("="*80)
+    
+    try:
+        interface = create_user_selectable_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception as e:
+        print(f"❌ USER-SELECTABLE system launch failed: {e}")
+        print("🔧 USER-SELECTABLE system troubleshooting:")
+        print("   • Verify model path is correct and accessible")
+        print("   • Check GPU memory availability and drivers")
+        print("   • Ensure all dependencies are installed:")
+        print("     pip install --upgrade torch transformers gradio librosa soundfile")
+        print("     pip install --upgrade noisereduce scipy nltk scikit-learn")
+        print("   • Verify Python environment and version compatibility")
+        print("   • Check port 7860 availability")
+        print("   • ALL preprocessing methods are available as checkbox controls")
+        print("   • Users can select any combination of the 20 available methods")
+        print("   • Custom processing pipelines based on user selections")
+        print("   • FIXED hann window function (no longer hanning)")
+        print("   • Comprehensive fallback systems are active")
+        print("="*80)
+
+if __name__ == "__main__":
+    main()
+
