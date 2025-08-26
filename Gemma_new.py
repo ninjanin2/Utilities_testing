@@ -1,22 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-COMPREHENSIVE ADVANCED SPEECH ENHANCEMENT & TRANSCRIPTION SYSTEM
-================================================================
+COMPREHENSIVE SPEECH ENHANCEMENT WITH USER-SELECTABLE PREPROCESSING
+==================================================================
 
-COMPREHENSIVE PREPROCESSING METHODS INCLUDED:
-- Spectral Domain Methods (Spectral Subtraction, MBSS, Wiener, MMSE-STSA, MMSE-LSA, OM-LSA)
-- Frequency Domain Filtering (Low/High/Band-pass, Adaptive Filtering)
-- Time-Frequency Domain Processing (DA-STFT, FFT with Hanning, Frame-Based, TF Masking)
-- Advanced Normalization (Z-score Min-Max, Dynamic Range Compression, Noise Gating)
-- Statistical Estimators and Signal Subspace Approaches
-- Voice Activity Detection and Speech Activity Detection
-- Noise Profile Analysis and SNR Enhancement
-- Temporal Processing and Frame Averaging
-- Real-time Adaptive Algorithms
-- Quality Assessment Metrics
+USER-SELECTABLE PREPROCESSING METHODS:
+- Spectral Domain Methods (6 techniques)
+- Frequency Domain Filtering (2 techniques)
+- Time-Frequency Processing (3 techniques)
+- Preprocessing & Normalization (5 techniques)
+- Advanced Methods (4 techniques)
+- All methods available as checkboxes in UI
+- 75-second timeout with noise detection messages
 
-Author: Comprehensive AI Audio Processing System
-Version: Complete Enhancement 14.0
+Author: User-Controlled AI Audio Processing System
+Version: Checkbox-Controlled Enhancement 15.0
 """
 
 import os
@@ -34,7 +31,8 @@ import queue
 import tempfile
 import soundfile as sf
 from scipy import signal
-from scipy.signal import butter, filtfilt, lfilter, wiener, hanning
+from scipy.signal import butter, filtfilt, lfilter, wiener
+from scipy.signal.windows import hann  # FIXED: Use hann instead of hanning
 from scipy.ndimage import median_filter, gaussian_filter1d
 from scipy.stats import zscore
 from scipy.linalg import svd, pinv
@@ -48,7 +46,6 @@ import re
 import nltk
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 
 # CRITICAL FIX: Disable torch dynamo
@@ -64,36 +61,16 @@ except LookupError:
     except:
         pass
 
-# --- COMPREHENSIVE ENHANCEMENT CONFIGURATION ---
+# --- USER-SELECTABLE ENHANCEMENT CONFIGURATION ---
 MODEL_PATH = "/path/to/your/local/gemma-3n-e4b-it"  # UPDATE THIS PATH
 
-# Enhanced settings for comprehensive processing
+# Enhanced settings
 CHUNK_SECONDS = 12
 OVERLAP_SECONDS = 2
 SAMPLE_RATE = 16000
 CHUNK_TIMEOUT = 75
 MAX_RETRIES = 1
 PROCESSING_THREADS = 1
-
-# COMPREHENSIVE: All enhancement methods enabled
-SPECTRAL_SUBTRACTION_ENABLED = True
-MULTI_BAND_SPECTRAL_SUBTRACTION = True
-WIENER_FILTERING_ENABLED = True
-MMSE_STSA_ENABLED = True
-MMSE_LSA_ENABLED = True
-OM_LSA_ENABLED = True
-ADAPTIVE_FILTERING_ENABLED = True
-DA_STFT_ENABLED = True
-TIME_FREQUENCY_MASKING = True
-ADVANCED_VAD_ENABLED = True
-Z_SCORE_NORMALIZATION = True
-DYNAMIC_RANGE_COMPRESSION = True
-NOISE_GATING_ENABLED = True
-TEMPORAL_SMOOTHING = True
-FRAME_AVERAGING = True
-SIGNAL_SUBSPACE_APPROACH = True
-NOISE_PROFILE_ANALYSIS = True
-SNR_ENHANCEMENT = True
 
 # Memory settings
 MIN_FREE_MEMORY_GB = 0.3
@@ -135,8 +112,8 @@ class TimeoutError(Exception):
     """Custom timeout exception"""
     pass
 
-class ComprehensiveVoiceActivityDetector:
-    """COMPREHENSIVE: Advanced multi-feature voice activity detection"""
+class UserSelectableVoiceActivityDetector:
+    """USER-SELECTABLE: Voice activity detection"""
     
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
@@ -144,9 +121,9 @@ class ComprehensiveVoiceActivityDetector:
         self.hop_length = 256
         
     def detect_voice_activity(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Comprehensive VAD using multiple acoustic features and statistical methods"""
+        """Multi-feature VAD"""
         try:
-            print("🎤 COMPREHENSIVE voice activity detection...")
+            print("🎤 USER-SELECTED voice activity detection...")
             
             # Energy-based features
             frame_energy = librosa.feature.rms(y=audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
@@ -161,7 +138,7 @@ class ComprehensiveVoiceActivityDetector:
             # Temporal features
             zcr = librosa.feature.zero_crossing_rate(audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
             
-            # MFCC features (comprehensive)
+            # MFCC features
             mfcc = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=13, hop_length=self.hop_length)
             mfcc_delta = librosa.feature.delta(mfcc)
             mfcc_delta2 = librosa.feature.delta(mfcc, order=2)
@@ -169,11 +146,8 @@ class ComprehensiveVoiceActivityDetector:
             # Chroma features
             chroma = librosa.feature.chroma_stft(y=audio, sr=self.sample_rate, hop_length=self.hop_length)
             
-            # Tonnetz features
-            tonnetz = librosa.feature.tonnetz(y=audio, sr=self.sample_rate)
-            
-            # Comprehensive statistical thresholding
-            energy_threshold = np.percentile(frame_energy, 15)  # Very conservative
+            # Statistical thresholding
+            energy_threshold = np.percentile(frame_energy, 15)
             centroid_threshold = np.percentile(spectral_centroids, 10)
             rolloff_threshold = np.percentile(spectral_rolloff, 20)
             bandwidth_threshold = np.percentile(spectral_bandwidth, 25)
@@ -182,32 +156,32 @@ class ComprehensiveVoiceActivityDetector:
             zcr_threshold = np.percentile(zcr, 85)
             mfcc_threshold = np.percentile(np.mean(mfcc, axis=0), 20)
             
-            # Multi-criteria decision with comprehensive weighting
+            # Multi-criteria decision
             voice_criteria = [
-                frame_energy > energy_threshold,  # Weight: 0.25
-                spectral_centroids > centroid_threshold,  # Weight: 0.20
-                spectral_rolloff > rolloff_threshold,  # Weight: 0.15
-                spectral_bandwidth > bandwidth_threshold,  # Weight: 0.10
-                np.mean(spectral_contrast, axis=0) > contrast_threshold,  # Weight: 0.10
-                spectral_flatness < flatness_threshold,  # Weight: 0.05
-                zcr < zcr_threshold,  # Weight: 0.05
-                np.mean(mfcc, axis=0) > mfcc_threshold,  # Weight: 0.10
+                frame_energy > energy_threshold,
+                spectral_centroids > centroid_threshold,
+                spectral_rolloff > rolloff_threshold,
+                spectral_bandwidth > bandwidth_threshold,
+                np.mean(spectral_contrast, axis=0) > contrast_threshold,
+                spectral_flatness < flatness_threshold,
+                zcr < zcr_threshold,
+                np.mean(mfcc, axis=0) > mfcc_threshold,
             ]
             
-            # Comprehensive weighted voting
+            # Weighted voting
             weights = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.10]
             voice_scores = np.zeros(len(frame_energy))
             
             for criterion, weight in zip(voice_criteria, weights):
                 voice_scores += criterion.astype(float) * weight
             
-            # Adaptive threshold based on signal statistics
-            voice_activity = voice_scores > 0.35  # Conservative threshold
+            # Threshold-based decision
+            voice_activity = voice_scores > 0.35
             
-            # Advanced smoothing with morphological operations
+            # Smoothing
             voice_activity = median_filter(voice_activity.astype(float), size=7) > 0.3
             
-            # Comprehensive statistics
+            # Statistics
             voice_percentage = np.mean(voice_activity) * 100
             stats = {
                 'voice_percentage': voice_percentage,
@@ -226,11 +200,11 @@ class ComprehensiveVoiceActivityDetector:
             return voice_activity, stats
             
         except Exception as e:
-            print(f"❌ Comprehensive VAD failed: {e}")
+            print(f"❌ VAD failed: {e}")
             return np.ones(len(audio) // self.hop_length, dtype=bool), {}
     
     def estimate_snr(self, audio: np.ndarray, voice_activity: np.ndarray) -> float:
-        """Estimate SNR using voice activity detection"""
+        """Estimate SNR using VAD"""
         try:
             hop_length = 256
             vad_expanded = np.repeat(voice_activity, hop_length)
@@ -251,22 +225,21 @@ class ComprehensiveVoiceActivityDetector:
                     snr = 10 * np.log10(signal_power / noise_power)
                     return snr
             
-            return 20.0  # Default moderate SNR
+            return 20.0
         except:
             return 20.0
 
-class ComprehensiveSpeechEnhancer:
-    """COMPREHENSIVE: All-in-one speech enhancement with every available technique"""
+class UserSelectableSpeechEnhancer:
+    """USER-SELECTABLE: Speech enhancement with checkbox controls"""
     
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
-        self.vad = ComprehensiveVoiceActivityDetector(sample_rate)
+        self.vad = UserSelectableVoiceActivityDetector(sample_rate)
         self.frame_size = 1024
         self.hop_size = 256
         self.scaler = StandardScaler()
         self.minmax_scaler = MinMaxScaler()
-        print(f"🚀 COMPREHENSIVE Speech Enhancer initialized for {sample_rate}Hz")
-        print("✅ ALL enhancement methods loaded and ready")
+        print(f"🚀 USER-SELECTABLE Speech Enhancer initialized for {sample_rate}Hz")
     
     # SPECTRAL DOMAIN METHODS
     
@@ -275,22 +248,16 @@ class ComprehensiveSpeechEnhancer:
         try:
             print("🔬 Applying spectral subtraction...")
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=2048, hop_length=512)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Estimate noise from first few frames
             noise_frames = magnitude[:, :10]
             noise_estimate = np.mean(noise_frames, axis=1, keepdims=True)
             
-            # Spectral subtraction
             enhanced_magnitude = magnitude - alpha * noise_estimate
-            
-            # Apply spectral floor
             enhanced_magnitude = np.maximum(enhanced_magnitude, beta * magnitude)
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=512)
             
@@ -301,47 +268,36 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def multi_band_spectral_subtraction(self, audio: np.ndarray) -> np.ndarray:
-        """Multi-Band Spectral Subtraction (MBSS)"""
+        """Multi-Band Spectral Subtraction"""
         try:
             print("🔬 Applying Multi-Band Spectral Subtraction...")
             
-            # Define frequency bands
             bands = [
-                (0, 500, 2.5, 0.02),     # Low frequencies
-                (500, 1500, 2.0, 0.01),  # Mid-low frequencies
-                (1500, 4000, 1.8, 0.005),# Mid frequencies (speech)
-                (4000, 8000, 2.2, 0.015) # High frequencies
+                (0, 500, 2.5, 0.02),
+                (500, 1500, 2.0, 0.01),
+                (1500, 4000, 1.8, 0.005),
+                (4000, 8000, 2.2, 0.015)
             ]
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=2048, hop_length=512)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Get frequency bins
             freqs = librosa.fft_frequencies(sr=self.sample_rate, n_fft=2048)
-            
             enhanced_magnitude = magnitude.copy()
             
             for low_freq, high_freq, alpha, beta in bands:
-                # Find frequency bin indices
                 low_bin = np.argmin(np.abs(freqs - low_freq))
                 high_bin = np.argmin(np.abs(freqs - high_freq))
                 
-                # Extract band
                 band_magnitude = magnitude[low_bin:high_bin, :]
-                
-                # Estimate noise for this band
                 band_noise = np.mean(band_magnitude[:, :10], axis=1, keepdims=True)
                 
-                # Apply spectral subtraction for this band
                 enhanced_band = band_magnitude - alpha * band_noise
                 enhanced_band = np.maximum(enhanced_band, beta * band_magnitude)
                 
-                # Update enhanced magnitude
                 enhanced_magnitude[low_bin:high_bin, :] = enhanced_band
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=512)
             
@@ -352,11 +308,10 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def wiener_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Advanced Wiener filtering with optimal parameters"""
+        """Wiener filtering"""
         try:
-            print("🔧 Applying advanced Wiener filtering...")
+            print("🔧 Applying Wiener filtering...")
             
-            # Estimate noise power using VAD
             vad_result, _ = self.vad.detect_voice_activity(audio)
             hop_length = 256
             vad_expanded = np.repeat(vad_result, hop_length)
@@ -373,26 +328,20 @@ class ComprehensiveSpeechEnhancer:
             else:
                 noise_power = np.var(audio) * 0.1
             
-            # Apply Wiener filter in segments
             segment_length = 4096
             overlap = 1024
             enhanced_audio = np.zeros_like(audio)
             
             for i in range(0, len(audio) - segment_length + 1, segment_length - overlap):
                 segment = audio[i:i + segment_length]
-                
-                # Apply Wiener filter
                 enhanced_segment = wiener(segment, noise=noise_power)
                 
-                # Overlap-add
                 if i == 0:
                     enhanced_audio[i:i + segment_length] = enhanced_segment
                 else:
-                    # Blend overlapping regions
                     blend_start = i
                     blend_end = i + overlap
                     
-                    # Linear blending
                     alpha = np.linspace(0, 1, overlap)
                     enhanced_audio[blend_start:blend_end] = (
                         (1 - alpha) * enhanced_audio[blend_start:blend_end] +
@@ -407,51 +356,36 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def mmse_stsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """MMSE Short-Time Spectral Amplitude Estimator"""
+        """MMSE-STSA Estimator"""
         try:
             print("🔬 Applying MMSE-STSA estimator...")
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=1024, hop_length=256)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Estimate noise power spectrum
             noise_magnitude = np.mean(magnitude[:, :10], axis=1, keepdims=True)
             noise_power = noise_magnitude ** 2
             
-            # Compute a priori SNR (using decision-directed approach)
-            alpha = 0.98  # Smoothing factor
+            alpha = 0.98
             signal_power = magnitude ** 2
             
-            # Initialize a priori SNR
             gamma_k = np.maximum(signal_power / noise_power - 1, 0.1)
-            
-            # MMSE-STSA gain function
             nu_k = gamma_k / (1 + gamma_k)
             
-            # Bessel function approximation for computational efficiency
             def modified_bessel_i0(x):
-                """Modified Bessel function of the first kind, order 0"""
                 return np.exp(x) / np.sqrt(2 * np.pi * x) * (1 + 1/(8*x))
             
             def modified_bessel_i1(x):
-                """Modified Bessel function of the first kind, order 1"""
                 return modified_bessel_i0(x) * (1 - 1/(2*x))
             
-            # MMSE-STSA gain
             v_k = nu_k * gamma_k / (1 + gamma_k)
-            
-            # Avoid numerical issues
             v_k = np.clip(v_k, 0.001, 10)
             
-            # Simplified gain function (avoiding complex Bessel functions)
             G_k = nu_k * np.exp(-v_k/2) * ((1 + v_k) * modified_bessel_i0(v_k/2) + v_k * modified_bessel_i1(v_k/2))
             
-            # Apply gain
             enhanced_magnitude = G_k * magnitude
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
             
@@ -459,42 +393,31 @@ class ComprehensiveSpeechEnhancer:
             
         except Exception as e:
             print(f"❌ MMSE-STSA failed: {e}")
-            return self.spectral_subtraction(audio)  # Fallback
+            return self.spectral_subtraction(audio)
     
     def mmse_lsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """MMSE Log-Spectral Amplitude Estimator"""
+        """MMSE-LSA Estimator"""
         try:
             print("🔬 Applying MMSE-LSA estimator...")
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=1024, hop_length=256)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Convert to log domain
             log_magnitude = np.log(magnitude + 1e-10)
-            
-            # Estimate noise power spectrum
             noise_log_magnitude = np.mean(log_magnitude[:, :10], axis=1, keepdims=True)
             
-            # Compute SNR in log domain
             snr = log_magnitude - noise_log_magnitude
             
-            # MMSE-LSA gain function (simplified)
             alpha = 2.0
             beta = 0.1
             
-            # Gain function
             G = np.exp(alpha * snr / (1 + np.exp(alpha * snr)))
             G = np.maximum(G, beta)
             
-            # Apply gain in log domain
             enhanced_log_magnitude = log_magnitude + np.log(G + 1e-10)
-            
-            # Convert back to linear domain
             enhanced_magnitude = np.exp(enhanced_log_magnitude)
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
             
@@ -502,66 +425,52 @@ class ComprehensiveSpeechEnhancer:
             
         except Exception as e:
             print(f"❌ MMSE-LSA failed: {e}")
-            return self.spectral_subtraction(audio)  # Fallback
+            return self.spectral_subtraction(audio)
     
     def om_lsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """Optimally-Modified Log-Spectral Amplitude (OM-LSA) Estimator"""
+        """OM-LSA Estimator"""
         try:
             print("🔬 Applying OM-LSA estimator...")
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=1024, hop_length=256)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Parameters
-            alpha_d = 0.95  # Decision-directed parameter
-            alpha_s = 0.9   # SPP smoothing parameter
-            beta = 0.005    # Minimum gain
+            alpha_d = 0.95
+            alpha_s = 0.9
+            beta = 0.005
             
-            # Initialize
             num_frames = magnitude.shape[1]
             num_bins = magnitude.shape[0]
             
-            # Estimate noise power spectrum
             noise_power = np.mean(magnitude[:, :10] ** 2, axis=1, keepdims=True)
             
-            # Initialize variables
-            gamma_k = np.zeros_like(magnitude)  # A posteriori SNR
-            xi_k = np.ones_like(magnitude)      # A priori SNR
-            p_k = np.zeros_like(magnitude)      # Speech presence probability
+            gamma_k = np.zeros_like(magnitude)
+            xi_k = np.ones_like(magnitude)
+            p_k = np.zeros_like(magnitude)
             
             enhanced_magnitude = np.zeros_like(magnitude)
             
             for frame in range(num_frames):
-                # A posteriori SNR
                 gamma_k[:, frame:frame+1] = magnitude[:, frame:frame+1] ** 2 / noise_power
                 
                 if frame > 0:
-                    # Decision-directed a priori SNR estimation
                     xi_k_dd = alpha_d * (enhanced_magnitude[:, frame-1:frame] ** 2 / noise_power) + \
                              (1 - alpha_d) * np.maximum(gamma_k[:, frame:frame+1] - 1, 0.1)
                     xi_k[:, frame:frame+1] = xi_k_dd
                 
-                # Speech presence probability (simplified)
                 v_k = gamma_k[:, frame:frame+1] * xi_k[:, frame:frame+1] / (1 + xi_k[:, frame:frame+1])
                 
-                # Simplified SPP calculation
                 p_k[:, frame:frame+1] = 1 / (1 + np.exp(-2 * (v_k - 1)))
                 
-                # OM-LSA gain function
                 G_k = xi_k[:, frame:frame+1] / (1 + xi_k[:, frame:frame+1])
                 
-                # Apply speech presence probability
                 G_k = p_k[:, frame:frame+1] * G_k + (1 - p_k[:, frame:frame+1]) * beta
                 
-                # Ensure minimum gain
                 G_k = np.maximum(G_k, beta)
                 
-                # Apply gain
                 enhanced_magnitude[:, frame:frame+1] = G_k * magnitude[:, frame:frame+1]
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
             
@@ -569,31 +478,22 @@ class ComprehensiveSpeechEnhancer:
             
         except Exception as e:
             print(f"❌ OM-LSA failed: {e}")
-            return self.mmse_stsa_estimator(audio)  # Fallback
+            return self.mmse_stsa_estimator(audio)
     
     # FREQUENCY DOMAIN FILTERING
     
     def comprehensive_frequency_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Comprehensive frequency domain filtering with proper normalization"""
+        """Frequency filtering with FIXED parameters"""
         try:
-            print("🎵 Applying comprehensive frequency filtering...")
+            print("🎵 Applying frequency filtering...")
             
-            # FIXED: Ensure cutoff frequencies are within valid range
-            nyquist = self.sample_rate / 2.0
-            
-            # High-pass filter (remove low-frequency noise)
-            high_cutoff = 85  # Hz
-            if high_cutoff >= nyquist:
-                high_cutoff = nyquist * 0.05  # 5% of Nyquist
-            
+            # High-pass filter
+            high_cutoff = 85
             high_b, high_a = butter(4, high_cutoff, btype='high', fs=self.sample_rate)
             audio = filtfilt(high_b, high_a, audio)
             
-            # Low-pass filter (remove high-frequency noise)
-            low_cutoff = 7900  # Hz (FIXED: Less than fs/2 = 8000)
-            if low_cutoff >= nyquist:
-                low_cutoff = nyquist * 0.95  # 95% of Nyquist
-            
+            # Low-pass filter (FIXED: 7900 Hz instead of 8000 Hz)
+            low_cutoff = 7900
             low_b, low_a = butter(4, low_cutoff, btype='low', fs=self.sample_rate)
             audio = filtfilt(low_b, low_a, audio)
             
@@ -604,35 +504,26 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def adaptive_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Adaptive filtering with LMS algorithm"""
+        """Adaptive filtering with LMS"""
         try:
             print("🔧 Applying adaptive filtering...")
             
-            # Parameters
             filter_length = 32
-            mu = 0.01  # Step size
+            mu = 0.01
             
-            # Initialize adaptive filter
             w = np.zeros(filter_length)
             filtered_audio = np.zeros_like(audio)
             
-            # Apply adaptive filter
             for n in range(filter_length, len(audio)):
-                # Input vector
-                x = audio[n-filter_length:n][::-1]  # Reversed for convolution
-                
-                # Filter output
+                x = audio[n-filter_length:n][::-1]
                 y = np.dot(w, x)
                 filtered_audio[n] = y
                 
-                # Error signal (use delayed input as reference)
                 d = audio[n-1] if n > 0 else 0
                 e = d - y
                 
-                # Update filter weights (LMS)
                 w = w + mu * e * x
             
-            # Copy initial samples
             filtered_audio[:filter_length] = audio[:filter_length]
             
             return filtered_audio.astype(np.float32)
@@ -644,45 +535,39 @@ class ComprehensiveSpeechEnhancer:
     # TIME-FREQUENCY DOMAIN PROCESSING
     
     def da_stft_processing(self, audio: np.ndarray) -> np.ndarray:
-        """Differentiable Adaptive Short-Time Fourier Transform"""
+        """DA-STFT processing with FIXED hann window"""
         try:
             print("🔬 Applying DA-STFT processing...")
             
-            # Adaptive window selection based on signal characteristics
             frame_energy = librosa.feature.rms(y=audio, frame_length=1024, hop_length=512)[0]
             avg_energy = np.mean(frame_energy)
             
-            # Select window size adaptively
             if avg_energy > 0.1:
-                n_fft = 2048  # High resolution for strong signals
+                n_fft = 2048
             elif avg_energy > 0.05:
-                n_fft = 1024  # Medium resolution
+                n_fft = 1024
             else:
-                n_fft = 512   # Low resolution for weak signals
+                n_fft = 512
             
             hop_length = n_fft // 4
             
-            # Apply adaptive STFT with Hanning window
-            window = hanning(n_fft)
+            # FIXED: Use hann instead of hanning
+            window = hann(n_fft)
             stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length, window=window)
             
-            # Adaptive spectral processing
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Spectral enhancement based on energy distribution
             enhanced_magnitude = magnitude.copy()
             
-            # Frequency-dependent processing
             freqs = librosa.fft_frequencies(sr=self.sample_rate, n_fft=n_fft)
             
             for i, freq in enumerate(freqs):
-                if 85 <= freq <= 4000:  # Speech frequency range
-                    enhanced_magnitude[i, :] *= 1.1  # Slight enhancement
-                elif freq > 6000:  # High frequency noise
-                    enhanced_magnitude[i, :] *= 0.8  # Slight suppression
+                if 85 <= freq <= 4000:
+                    enhanced_magnitude[i, :] *= 1.1
+                elif freq > 6000:
+                    enhanced_magnitude[i, :] *= 0.8
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=hop_length, window=window)
             
@@ -693,34 +578,27 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def time_frequency_masking(self, audio: np.ndarray) -> np.ndarray:
-        """Time-Frequency masking for noise suppression"""
+        """Time-frequency masking"""
         try:
             print("🎭 Applying time-frequency masking...")
             
-            # Compute STFT
             stft = librosa.stft(audio, n_fft=1024, hop_length=256)
             magnitude = np.abs(stft)
             phase = np.angle(stft)
             
-            # Create ideal binary mask based on SNR
             noise_estimate = np.mean(magnitude[:, :10], axis=1, keepdims=True)
             snr = magnitude / (noise_estimate + 1e-10)
             
-            # Binary mask (1 for speech, 0 for noise)
-            threshold = 2.0  # SNR threshold
+            threshold = 2.0
             binary_mask = (snr > threshold).astype(float)
             
-            # Smooth the mask to avoid artifacts
             from scipy.ndimage import gaussian_filter
             smooth_mask = gaussian_filter(binary_mask, sigma=1.0)
             
-            # Apply soft masking
-            soft_mask = smooth_mask * 0.9 + 0.1  # Ensure minimum gain
+            soft_mask = smooth_mask * 0.9 + 0.1
             
-            # Apply mask
             enhanced_magnitude = magnitude * soft_mask
             
-            # Reconstruct
             enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
             enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
             
@@ -731,7 +609,7 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def frame_based_processing(self, audio: np.ndarray) -> np.ndarray:
-        """Frame-based processing with overlap-add"""
+        """Frame-based processing"""
         try:
             print("📊 Applying frame-based processing...")
             
@@ -739,30 +617,23 @@ class ComprehensiveSpeechEnhancer:
             hop_length = 256
             overlap = frame_length - hop_length
             
-            # Window function
-            window = hanning(frame_length)
+            # FIXED: Use hann instead of hanning
+            window = hann(frame_length)
             
-            # Initialize output
             enhanced_audio = np.zeros_like(audio)
             
-            # Process frames
             for i in range(0, len(audio) - frame_length + 1, hop_length):
-                # Extract frame
                 frame = audio[i:i + frame_length] * window
                 
-                # Process frame (spectral enhancement)
                 frame_fft = np.fft.fft(frame)
                 magnitude = np.abs(frame_fft)
                 phase = np.angle(frame_fft)
                 
-                # Simple spectral enhancement
-                enhanced_magnitude = magnitude ** 0.9  # Slight compression
+                enhanced_magnitude = magnitude ** 0.9
                 
-                # Reconstruct frame
                 enhanced_fft = enhanced_magnitude * np.exp(1j * phase)
                 enhanced_frame = np.real(np.fft.ifft(enhanced_fft))
                 
-                # Apply window and overlap-add
                 enhanced_frame *= window
                 enhanced_audio[i:i + frame_length] += enhanced_frame
             
@@ -772,23 +643,17 @@ class ComprehensiveSpeechEnhancer:
             print(f"❌ Frame-based processing failed: {e}")
             return audio
     
-    # PREPROCESSING AND NORMALIZATION TECHNIQUES
+    # PREPROCESSING AND NORMALIZATION
     
     def z_score_min_max_normalization(self, audio: np.ndarray) -> np.ndarray:
-        """Z-score Min-Max normalization for enhanced feature extraction"""
+        """Z-score Min-Max normalization"""
         try:
             print("📊 Applying Z-score Min-Max normalization...")
             
-            # Z-score normalization (standardization)
             audio_zscore = zscore(audio)
-            
-            # Handle NaN values
             audio_zscore = np.nan_to_num(audio_zscore, nan=0.0, posinf=1.0, neginf=-1.0)
             
-            # Min-Max normalization
             audio_normalized = self.minmax_scaler.fit_transform(audio_zscore.reshape(-1, 1)).flatten()
-            
-            # Scale to desired range [-0.8, 0.8] for ASR optimization
             audio_normalized = audio_normalized * 1.6 - 0.8
             
             return audio_normalized.astype(np.float32)
@@ -798,45 +663,36 @@ class ComprehensiveSpeechEnhancer:
             return librosa.util.normalize(audio).astype(np.float32)
     
     def dynamic_range_compression(self, audio: np.ndarray) -> np.ndarray:
-        """Advanced dynamic range compression"""
+        """Dynamic range compression"""
         try:
             print("📊 Applying dynamic range compression...")
             
-            # Parameters
             threshold = 0.3
             ratio = 4.0
-            attack_time = 0.003  # 3ms
-            release_time = 0.100  # 100ms
+            attack_time = 0.003
+            release_time = 0.100
             
-            # Convert time to samples
             attack_samples = int(attack_time * self.sample_rate)
             release_samples = int(release_time * self.sample_rate)
             
-            # Initialize variables
             envelope = 0.0
             compressed_audio = np.zeros_like(audio)
             
             for i, sample in enumerate(audio):
-                # Envelope following
                 input_level = abs(sample)
                 
                 if input_level > envelope:
-                    # Attack
                     envelope += (input_level - envelope) / attack_samples
                 else:
-                    # Release
                     envelope += (input_level - envelope) / release_samples
                 
-                # Compression
                 if envelope > threshold:
-                    # Calculate compression gain
                     excess = envelope - threshold
                     compressed_excess = excess / ratio
                     gain = (threshold + compressed_excess) / envelope if envelope > 0 else 1.0
                 else:
                     gain = 1.0
                 
-                # Apply gain
                 compressed_audio[i] = sample * gain
             
             return compressed_audio.astype(np.float32)
@@ -846,38 +702,30 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def noise_gating(self, audio: np.ndarray, threshold_db: float = -40.0) -> np.ndarray:
-        """Noise gating to suppress low-level background noise"""
+        """Noise gating"""
         try:
             print("🚪 Applying noise gating...")
             
-            # Convert threshold to linear scale
             threshold_linear = 10 ** (threshold_db / 20.0)
             
-            # Calculate envelope
             frame_length = 1024
             hop_length = 256
             
-            # RMS energy calculation
             rms = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop_length)[0]
             
-            # Expand to audio length
             rms_expanded = np.repeat(rms, hop_length)
             if len(rms_expanded) > len(audio):
                 rms_expanded = rms_expanded[:len(audio)]
             elif len(rms_expanded) < len(audio):
                 rms_expanded = np.pad(rms_expanded, (0, len(audio) - len(rms_expanded)), mode='edge')
             
-            # Create gate
             gate = (rms_expanded > threshold_linear).astype(float)
             
-            # Smooth the gate to avoid clicks
             gate_smooth = gaussian_filter1d(gate, sigma=2.0)
             
-            # Apply gate with minimum attenuation
             min_gain = 0.1
             gate_gain = gate_smooth * (1 - min_gain) + min_gain
             
-            # Apply gating
             gated_audio = audio * gate_gain
             
             return gated_audio.astype(np.float32)
@@ -887,18 +735,15 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def temporal_smoothing(self, audio: np.ndarray, window_size: int = 5) -> np.ndarray:
-        """Temporal smoothing to reduce transient noise"""
+        """Temporal smoothing"""
         try:
             print("📈 Applying temporal smoothing...")
             
-            # Apply moving average filter
             if window_size > len(audio):
                 window_size = len(audio) // 10
             
-            # Create smoothing kernel
             kernel = np.ones(window_size) / window_size
             
-            # Apply convolution with padding
             smoothed_audio = np.convolve(audio, kernel, mode='same')
             
             return smoothed_audio.astype(np.float32)
@@ -908,14 +753,13 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def frame_averaging(self, audio: np.ndarray, num_frames: int = 3) -> np.ndarray:
-        """Frame averaging to improve SNR"""
+        """Frame averaging"""
         try:
             print("📊 Applying frame averaging...")
             
             frame_length = 1024
             hop_length = 512
             
-            # Extract frames
             frames = []
             for i in range(0, len(audio) - frame_length + 1, hop_length):
                 frame = audio[i:i + frame_length]
@@ -924,21 +768,17 @@ class ComprehensiveSpeechEnhancer:
             if len(frames) < num_frames:
                 return audio
             
-            # Average frames
             averaged_audio = np.zeros_like(audio)
             
             for i in range(len(frames)):
                 start_idx = i * hop_length
                 end_idx = start_idx + frame_length
                 
-                # Select frames to average
                 start_frame = max(0, i - num_frames // 2)
                 end_frame = min(len(frames), start_frame + num_frames)
                 
-                # Average selected frames
                 avg_frame = np.mean(frames[start_frame:end_frame], axis=0)
                 
-                # Add to output with overlap handling
                 if end_idx <= len(averaged_audio):
                     averaged_audio[start_idx:end_idx] += avg_frame
                 else:
@@ -954,15 +794,13 @@ class ComprehensiveSpeechEnhancer:
     # ADVANCED METHODS
     
     def signal_subspace_approach(self, audio: np.ndarray) -> np.ndarray:
-        """Signal Subspace Approach (SSA) for speech enhancement"""
+        """Signal Subspace Approach"""
         try:
             print("🔬 Applying Signal Subspace Approach...")
             
-            # Frame the signal
             frame_length = 256
             hop_length = 128
             
-            # Create Hankel matrix
             frames = []
             for i in range(0, len(audio) - frame_length + 1, hop_length):
                 frames.append(audio[i:i + frame_length])
@@ -970,24 +808,18 @@ class ComprehensiveSpeechEnhancer:
             if len(frames) < 2:
                 return audio
             
-            # Convert to matrix
             X = np.array(frames).T
             
-            # SVD decomposition
             U, s, Vt = svd(X, full_matrices=False)
             
-            # Determine signal subspace dimension (keep top components)
             total_energy = np.sum(s**2)
             cumulative_energy = np.cumsum(s**2)
             
-            # Keep components that contain 95% of energy
             signal_dim = np.argmax(cumulative_energy / total_energy > 0.95) + 1
-            signal_dim = max(1, min(signal_dim, len(s) // 2))  # Ensure reasonable dimension
+            signal_dim = max(1, min(signal_dim, len(s) // 2))
             
-            # Reconstruct using signal subspace
             X_clean = U[:, :signal_dim] @ np.diag(s[:signal_dim]) @ Vt[:signal_dim, :]
             
-            # Reconstruct audio
             enhanced_audio = np.zeros_like(audio)
             for i, frame in enumerate(X_clean.T):
                 start_idx = i * hop_length
@@ -1005,11 +837,10 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def noise_profile_analysis(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Comprehensive noise profile analysis"""
+        """Noise profile analysis"""
         try:
             print("🔍 Performing noise profile analysis...")
             
-            # Detect noise-only regions using VAD
             vad_result, vad_stats = self.vad.detect_voice_activity(audio)
             
             hop_length = 256
@@ -1022,25 +853,21 @@ class ComprehensiveSpeechEnhancer:
             
             noise_regions = ~vad_expanded.astype(bool)
             
-            # Analyze noise characteristics
             noise_profile = {}
             
             if np.any(noise_regions):
                 noise_samples = audio[noise_regions]
                 
-                # Statistical properties
                 noise_profile['mean'] = np.mean(noise_samples)
                 noise_profile['std'] = np.std(noise_samples)
                 noise_profile['rms'] = np.sqrt(np.mean(noise_samples**2))
                 noise_profile['peak'] = np.max(np.abs(noise_samples))
                 
-                # Spectral properties
                 noise_stft = librosa.stft(noise_samples[:min(len(noise_samples), 8192)])
                 noise_magnitude = np.abs(noise_stft)
                 noise_profile['spectral_centroid'] = np.mean(librosa.feature.spectral_centroid(S=noise_magnitude))
                 noise_profile['spectral_bandwidth'] = np.mean(librosa.feature.spectral_bandwidth(S=noise_magnitude))
                 
-                # Noise type classification (simplified)
                 if noise_profile['spectral_centroid'] > 3000:
                     noise_profile['type'] = 'high_frequency'
                 elif noise_profile['spectral_centroid'] < 1000:
@@ -1048,11 +875,9 @@ class ComprehensiveSpeechEnhancer:
                 else:
                     noise_profile['type'] = 'broadband'
                 
-                # Apply targeted noise reduction
                 enhanced_audio = self.targeted_noise_reduction(audio, noise_profile)
                 
             else:
-                # No clear noise regions detected
                 noise_profile['type'] = 'unknown'
                 enhanced_audio = audio
             
@@ -1063,24 +888,21 @@ class ComprehensiveSpeechEnhancer:
             return audio, {}
     
     def targeted_noise_reduction(self, audio: np.ndarray, noise_profile: Dict) -> np.ndarray:
-        """Apply targeted noise reduction based on noise profile"""
+        """Targeted noise reduction"""
         try:
             noise_type = noise_profile.get('type', 'broadband')
             
             if noise_type == 'high_frequency':
-                # Apply stronger low-pass filtering
                 cutoff = 6000
                 b, a = butter(6, cutoff, btype='low', fs=self.sample_rate)
                 audio = filtfilt(b, a, audio)
                 
             elif noise_type == 'low_frequency':
-                # Apply stronger high-pass filtering
                 cutoff = 120
                 b, a = butter(6, cutoff, btype='high', fs=self.sample_rate)
                 audio = filtfilt(b, a, audio)
                 
-            else:  # broadband
-                # Apply moderate filtering
+            else:
                 audio = self.comprehensive_frequency_filtering(audio)
             
             return audio
@@ -1090,26 +912,18 @@ class ComprehensiveSpeechEnhancer:
             return audio
     
     def snr_enhancement(self, audio: np.ndarray) -> Tuple[np.ndarray, float]:
-        """SNR enhancement with measurement"""
+        """SNR enhancement"""
         try:
             print("📊 Applying SNR enhancement...")
             
-            # Measure initial SNR
             initial_snr = self.measure_snr(audio)
             
-            # Apply multi-stage enhancement
             enhanced_audio = audio.copy()
             
-            # Stage 1: Spectral subtraction
             enhanced_audio = self.spectral_subtraction(enhanced_audio, alpha=1.5, beta=0.05)
-            
-            # Stage 2: Wiener filtering
             enhanced_audio = self.wiener_filtering(enhanced_audio)
-            
-            # Stage 3: Dynamic range compression
             enhanced_audio = self.dynamic_range_compression(enhanced_audio)
             
-            # Measure final SNR
             final_snr = self.measure_snr(enhanced_audio)
             snr_improvement = final_snr - initial_snr
             
@@ -1121,10 +935,40 @@ class ComprehensiveSpeechEnhancer:
             print(f"❌ SNR enhancement failed: {e}")
             return audio, 0.0
     
-    def measure_snr(self, audio: np.ndarray) -> float:
-        """Measure Signal-to-Noise Ratio"""
+    def advanced_vad_enhancement(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
+        """Advanced VAD enhancement"""
         try:
-            # Use VAD to separate signal and noise
+            print("🎤 Advanced VAD enhancement...")
+            
+            vad_result, vad_stats = self.vad.detect_voice_activity(audio)
+            
+            hop_length = 256
+            vad_expanded = np.repeat(vad_result, hop_length)
+            
+            if len(vad_expanded) > len(audio):
+                vad_expanded = vad_expanded[:len(audio)]
+            elif len(vad_expanded) < len(audio):
+                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
+            
+            enhanced_audio = audio.copy()
+            voice_regions = vad_expanded.astype(bool)
+            
+            if np.any(voice_regions):
+                enhanced_audio[voice_regions] *= 1.05
+            
+            noise_regions = ~voice_regions
+            if np.any(noise_regions):
+                enhanced_audio[noise_regions] *= 0.95
+            
+            return enhanced_audio.astype(np.float32), vad_stats
+            
+        except Exception as e:
+            print(f"❌ Advanced VAD enhancement failed: {e}")
+            return audio, {}
+    
+    def measure_snr(self, audio: np.ndarray) -> float:
+        """Measure SNR"""
+        try:
             vad_result, _ = self.vad.detect_voice_activity(audio)
             
             hop_length = 256
@@ -1146,7 +990,6 @@ class ComprehensiveSpeechEnhancer:
                     snr = 10 * np.log10(signal_power / noise_power)
                     return snr
             
-            # Fallback: estimate SNR using energy distribution
             frame_energy = librosa.feature.rms(y=audio, frame_length=1024, hop_length=512)[0]
             signal_power = np.percentile(frame_energy, 90)**2
             noise_power = np.percentile(frame_energy, 10)**2
@@ -1155,24 +998,23 @@ class ComprehensiveSpeechEnhancer:
                 snr = 10 * np.log10(signal_power / noise_power)
                 return snr
             
-            return 20.0  # Default SNR
+            return 20.0
             
         except Exception as e:
             print(f"❌ SNR measurement failed: {e}")
             return 20.0
     
-    # COMPREHENSIVE PIPELINE
+    # USER-SELECTABLE PIPELINE
     
-    def comprehensive_speech_enhancement(self, audio: np.ndarray, enhancement_level: str = "moderate") -> Tuple[np.ndarray, Dict]:
-        """COMPREHENSIVE: Complete speech enhancement pipeline with ALL methods"""
+    def user_selectable_enhancement(self, audio: np.ndarray, selected_methods: Dict, enhancement_level: str = "moderate") -> Tuple[np.ndarray, Dict]:
+        """USER-SELECTABLE: Enhancement pipeline with checkbox controls"""
         original_audio = audio.copy()
-        stats = {'enhancement_level': enhancement_level}
+        stats = {'enhancement_level': enhancement_level, 'selected_methods': selected_methods}
         
         try:
-            print(f"🚀 Starting COMPREHENSIVE speech enhancement pipeline ({enhancement_level})...")
-            print("✅ ALL preprocessing methods will be applied in optimal order")
+            print(f"🚀 Starting USER-SELECTABLE enhancement pipeline ({enhancement_level})...")
+            print("✅ Applying only user-selected methods")
             
-            # Initial quality assessment
             initial_snr = self.measure_snr(audio)
             stats['initial_snr'] = initial_snr
             stats['original_length'] = len(audio) / self.sample_rate
@@ -1180,131 +1022,87 @@ class ComprehensiveSpeechEnhancer:
             print(f"📊 Initial SNR: {initial_snr:.2f} dB")
             
             # STAGE 1: PREPROCESSING AND NORMALIZATION
-            print("🔧 STAGE 1: Preprocessing and Normalization")
-            
-            # Z-score Min-Max normalization
-            if Z_SCORE_NORMALIZATION:
-                audio = self.z_score_min_max_normalization(audio)
-            
-            # Noise gating
-            if NOISE_GATING_ENABLED:
-                audio = self.noise_gating(audio)
+            if selected_methods.get('preprocessing_methods'):
+                print("🔧 STAGE 1: User-selected preprocessing methods")
+                
+                if "Z-score Min-Max Normalization" in selected_methods['preprocessing_methods']:
+                    audio = self.z_score_min_max_normalization(audio)
+                
+                if "Noise Gating" in selected_methods['preprocessing_methods']:
+                    audio = self.noise_gating(audio)
+                
+                if "Dynamic Range Compression" in selected_methods['preprocessing_methods']:
+                    audio = self.dynamic_range_compression(audio)
+                
+                if "Temporal Smoothing" in selected_methods['preprocessing_methods']:
+                    audio = self.temporal_smoothing(audio)
+                
+                if "Frame Averaging" in selected_methods['preprocessing_methods']:
+                    audio = self.frame_averaging(audio)
             
             # STAGE 2: FREQUENCY DOMAIN FILTERING
-            print("🎵 STAGE 2: Frequency Domain Filtering")
-            
-            # Comprehensive frequency filtering (FIXED)
-            audio = self.comprehensive_frequency_filtering(audio)
-            
-            # Adaptive filtering
-            if ADAPTIVE_FILTERING_ENABLED:
-                audio = self.adaptive_filtering(audio)
+            if selected_methods.get('frequency_methods'):
+                print("🎵 STAGE 2: User-selected frequency domain methods")
+                
+                if "Comprehensive Frequency Filtering" in selected_methods['frequency_methods']:
+                    audio = self.comprehensive_frequency_filtering(audio)
+                
+                if "Adaptive Filtering" in selected_methods['frequency_methods']:
+                    audio = self.adaptive_filtering(audio)
             
             # STAGE 3: SPECTRAL DOMAIN METHODS
-            print("🔬 STAGE 3: Spectral Domain Methods")
-            
-            # Classical spectral subtraction
-            if SPECTRAL_SUBTRACTION_ENABLED:
-                audio = self.spectral_subtraction(audio)
-            
-            # Multi-Band Spectral Subtraction
-            if MULTI_BAND_SPECTRAL_SUBTRACTION and enhancement_level in ["moderate", "aggressive"]:
-                audio = self.multi_band_spectral_subtraction(audio)
-            
-            # Advanced estimators based on enhancement level
-            if enhancement_level == "aggressive":
-                # Apply all advanced methods
-                if MMSE_STSA_ENABLED:
+            if selected_methods.get('spectral_methods'):
+                print("🔬 STAGE 3: User-selected spectral domain methods")
+                
+                if "Spectral Subtraction" in selected_methods['spectral_methods']:
+                    audio = self.spectral_subtraction(audio)
+                
+                if "Multi-Band Spectral Subtraction" in selected_methods['spectral_methods']:
+                    audio = self.multi_band_spectral_subtraction(audio)
+                
+                if "Wiener Filtering" in selected_methods['spectral_methods']:
+                    audio = self.wiener_filtering(audio)
+                
+                if "MMSE-STSA Estimator" in selected_methods['spectral_methods']:
                     audio = self.mmse_stsa_estimator(audio)
                 
-                if MMSE_LSA_ENABLED:
+                if "MMSE-LSA Estimator" in selected_methods['spectral_methods']:
                     audio = self.mmse_lsa_estimator(audio)
                 
-                if OM_LSA_ENABLED:
+                if "OM-LSA Estimator" in selected_methods['spectral_methods']:
                     audio = self.om_lsa_estimator(audio)
-                
-            elif enhancement_level == "moderate":
-                # Apply selective advanced methods
-                if MMSE_STSA_ENABLED:
-                    audio = self.mmse_stsa_estimator(audio)
-            
-            # Wiener filtering
-            if WIENER_FILTERING_ENABLED and enhancement_level in ["moderate", "aggressive"]:
-                audio = self.wiener_filtering(audio)
             
             # STAGE 4: TIME-FREQUENCY DOMAIN PROCESSING
-            print("🔬 STAGE 4: Time-Frequency Domain Processing")
-            
-            # DA-STFT processing
-            if DA_STFT_ENABLED:
-                audio = self.da_stft_processing(audio)
-            
-            # Time-frequency masking
-            if TIME_FREQUENCY_MASKING:
-                audio = self.time_frequency_masking(audio)
-            
-            # Frame-based processing
-            audio = self.frame_based_processing(audio)
+            if selected_methods.get('time_frequency_methods'):
+                print("🔬 STAGE 4: User-selected time-frequency methods")
+                
+                if "DA-STFT Processing" in selected_methods['time_frequency_methods']:
+                    audio = self.da_stft_processing(audio)
+                
+                if "Time-Frequency Masking" in selected_methods['time_frequency_methods']:
+                    audio = self.time_frequency_masking(audio)
+                
+                if "Frame-Based Processing" in selected_methods['time_frequency_methods']:
+                    audio = self.frame_based_processing(audio)
             
             # STAGE 5: ADVANCED METHODS
-            print("🔬 STAGE 5: Advanced Methods")
-            
-            # Signal Subspace Approach
-            if SIGNAL_SUBSPACE_APPROACH and enhancement_level == "aggressive":
-                audio = self.signal_subspace_approach(audio)
-            
-            # Noise profile analysis and targeted reduction
-            if NOISE_PROFILE_ANALYSIS:
-                audio, noise_profile = self.noise_profile_analysis(audio)
-                stats.update({'noise_profile': noise_profile})
-            
-            # STAGE 6: TEMPORAL PROCESSING
-            print("📊 STAGE 6: Temporal Processing")
-            
-            # Temporal smoothing
-            if TEMPORAL_SMOOTHING:
-                audio = self.temporal_smoothing(audio)
-            
-            # Frame averaging
-            if FRAME_AVERAGING and enhancement_level in ["moderate", "aggressive"]:
-                audio = self.frame_averaging(audio)
-            
-            # Dynamic range compression
-            if DYNAMIC_RANGE_COMPRESSION:
-                audio = self.dynamic_range_compression(audio)
-            
-            # STAGE 7: VOICE ACTIVITY ENHANCEMENT
-            print("🎤 STAGE 7: Voice Activity Enhancement")
-            
-            if ADVANCED_VAD_ENABLED:
-                vad_result, vad_stats = self.vad.detect_voice_activity(audio)
-                stats.update(vad_stats)
+            if selected_methods.get('advanced_methods'):
+                print("🔬 STAGE 5: User-selected advanced methods")
                 
-                # Apply voice activity-based enhancement
-                hop_length = 256
-                vad_expanded = np.repeat(vad_result, hop_length)
+                if "Signal Subspace Approach" in selected_methods['advanced_methods']:
+                    audio = self.signal_subspace_approach(audio)
                 
-                if len(vad_expanded) > len(audio):
-                    vad_expanded = vad_expanded[:len(audio)]
-                elif len(vad_expanded) < len(audio):
-                    vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
+                if "Noise Profile Analysis" in selected_methods['advanced_methods']:
+                    audio, noise_profile = self.noise_profile_analysis(audio)
+                    stats.update({'noise_profile': noise_profile})
                 
-                voice_regions = vad_expanded.astype(bool)
+                if "SNR Enhancement" in selected_methods['advanced_methods']:
+                    audio, snr_improvement = self.snr_enhancement(audio)
+                    stats['snr_improvement'] = snr_improvement
                 
-                # Conservative enhancement
-                if np.any(voice_regions):
-                    audio[voice_regions] *= 1.05  # Light boost
-                
-                noise_regions = ~voice_regions
-                if np.any(noise_regions):
-                    audio[noise_regions] *= 0.95  # Light suppression
-            
-            # STAGE 8: SNR ENHANCEMENT AND FINAL PROCESSING
-            print("📊 STAGE 8: SNR Enhancement and Final Processing")
-            
-            if SNR_ENHANCEMENT:
-                audio, snr_improvement = self.snr_enhancement(audio)
-                stats['snr_improvement'] = snr_improvement
+                if "Advanced VAD Enhancement" in selected_methods['advanced_methods']:
+                    audio, vad_stats = self.advanced_vad_enhancement(audio)
+                    stats.update(vad_stats)
             
             # Final normalization for ASR
             audio = librosa.util.normalize(audio)
@@ -1316,14 +1114,14 @@ class ComprehensiveSpeechEnhancer:
             stats['total_snr_improvement'] = final_snr - initial_snr
             stats['final_rms'] = np.sqrt(np.mean(audio**2))
             
-            print(f"✅ COMPREHENSIVE enhancement completed")
+            print(f"✅ USER-SELECTABLE enhancement completed")
             print(f"📊 SNR improvement: {stats['total_snr_improvement']:.2f} dB")
             print(f"📊 Final RMS level: {stats['final_rms']:.4f} (ASR-optimized)")
             
             return audio.astype(np.float32), stats
             
         except Exception as e:
-            print(f"❌ Comprehensive enhancement failed: {e}")
+            print(f"❌ User-selectable enhancement failed: {e}")
             return original_audio.astype(np.float32), {}
 
 class AudioHandler:
@@ -1549,28 +1347,22 @@ class SmartTextChunker:
         
         return chunks
 
-class ComprehensiveSpeechTranscriber:
-    """COMPREHENSIVE: Audio transcriber with complete preprocessing pipeline"""
+class UserSelectableSpeechTranscriber:
+    """USER-SELECTABLE: Audio transcriber with checkbox-controlled preprocessing"""
     
     def __init__(self, model_path: str, use_quantization: bool = True):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
         self.model = None
         self.processor = None
-        self.audio_enhancer = ComprehensiveSpeechEnhancer(SAMPLE_RATE)
+        self.audio_enhancer = UserSelectableSpeechEnhancer(SAMPLE_RATE)
         self.text_chunker = SmartTextChunker()
         self.chunk_count = 0
         self.temp_files = []
         
         print(f"🖥️ Using device: {self.device}")
-        print(f"🚀 COMPREHENSIVE speech enhancement enabled with ALL methods:")
-        print(f"   🔬 Spectral Domain: Subtraction, MBSS, Wiener, MMSE-STSA, MMSE-LSA, OM-LSA")
-        print(f"   🎵 Frequency Domain: Low/High/Band-pass, Adaptive Filtering")
-        print(f"   🔬 Time-Frequency: DA-STFT, FFT+Hanning, Frame-Based, TF Masking")
-        print(f"   📊 Normalization: Z-score Min-Max, Dynamic Range, Noise Gating")
-        print(f"   🔬 Advanced: Signal Subspace, Noise Profile Analysis, SNR Enhancement")
-        print(f"   📊 Temporal: Smoothing, Frame Averaging")
-        print(f"   🎤 VAD: Comprehensive multi-feature detection")
+        print(f"🚀 USER-SELECTABLE speech enhancement enabled")
+        print(f"✅ All methods available as checkbox controls")
         print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
         
         if not os.path.isdir(model_path):
@@ -1611,7 +1403,7 @@ class ComprehensiveSpeechTranscriber:
             
             loading_time = time.time() - start_time
             OptimizedMemoryManager.log_memory_status("After model loading", force_log=True)
-            print(f"✅ COMPREHENSIVE model loaded in {loading_time:.1f} seconds")
+            print(f"✅ USER-SELECTABLE model loaded in {loading_time:.1f} seconds")
             
         except Exception as e:
             print(f"❌ Model loading failed: {e}")
@@ -1646,7 +1438,7 @@ class ComprehensiveSpeechTranscriber:
                 print("⚠️ Reached chunk limit for processing speed")
                 break
         
-        print(f"✅ Created {len(chunks)} comprehensive processing chunks")
+        print(f"✅ Created {len(chunks)} user-selectable processing chunks")
         return chunks
     
     def transcribe_chunk_with_timeout(self, audio_chunk: np.ndarray, language: str = "auto") -> str:
@@ -1751,7 +1543,7 @@ class ComprehensiveSpeechTranscriber:
             OptimizedMemoryManager.fast_cleanup()
             return "[CUDA_OUT_OF_MEMORY]"
         except Exception as e:
-            print(f"❌ Comprehensive transcription error: {str(e)}")
+            print(f"❌ User-selectable transcription error: {str(e)}")
             return f"[ERROR: {str(e)[:30]}]"
         finally:
             if temp_audio_file:
@@ -1765,7 +1557,7 @@ class ComprehensiveSpeechTranscriber:
             return "[NO_TRANSLATION_NEEDED]"
         
         try:
-            print("🌐 Starting comprehensive text translation...")
+            print("🌐 Starting user-selectable text translation...")
             
             english_indicators = [
                 "the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you",
@@ -1809,7 +1601,7 @@ class ComprehensiveSpeechTranscriber:
             return merged_translation
             
         except Exception as e:
-            print(f"❌ Comprehensive translation error: {str(e)}")
+            print(f"❌ User-selectable translation error: {str(e)}")
             OptimizedMemoryManager.fast_cleanup()
             return f"[TRANSLATION_ERROR: {str(e)[:50]}]"
     
@@ -1890,13 +1682,14 @@ class ComprehensiveSpeechTranscriber:
         
         return merged_text.strip()
     
-    def transcribe_with_comprehensive_enhancement(self, audio_path: str, language: str = "auto", 
+    def transcribe_with_user_selected_enhancement(self, audio_path: str, selected_methods: Dict, language: str = "auto", 
                                                 enhancement_level: str = "moderate") -> Tuple[str, str, str, Dict]:
         try:
-            print(f"🚀 Starting COMPREHENSIVE transcription with ALL preprocessing methods...")
+            print(f"🚀 Starting USER-SELECTABLE transcription with selected preprocessing methods...")
             print(f"🔧 Enhancement level: {enhancement_level}")
             print(f"🌍 Language: {language}")
-                        print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
+            print(f"✅ Selected methods: {len([item for sublist in selected_methods.values() for item in sublist])} total")
+            print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
             
             OptimizedMemoryManager.log_memory_status("Initial", force_log=True)
             
@@ -1916,18 +1709,18 @@ class ComprehensiveSpeechTranscriber:
                 print(f"❌ Audio loading failed: {e}")
                 return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
             
-            # COMPREHENSIVE: Apply ALL enhancement methods
-            enhanced_audio, stats = self.audio_enhancer.comprehensive_speech_enhancement(
-                audio_array, enhancement_level
+            # USER-SELECTABLE: Apply only selected methods
+            enhanced_audio, stats = self.audio_enhancer.user_selectable_enhancement(
+                audio_array, selected_methods, enhancement_level
             )
             
-            enhanced_path = tempfile.mktemp(suffix="_comprehensive_enhanced.wav")
+            enhanced_path = tempfile.mktemp(suffix="_user_selected_enhanced.wav")
             original_path = tempfile.mktemp(suffix="_original.wav")
             
             sf.write(enhanced_path, enhanced_audio, SAMPLE_RATE)
             sf.write(original_path, audio_array, SAMPLE_RATE)
             
-            print("✂️ Creating comprehensive processing chunks...")
+            print("✂️ Creating user-selectable processing chunks...")
             chunks = self.create_speech_chunks(enhanced_audio)
             
             if not chunks:
@@ -1940,7 +1733,7 @@ class ComprehensiveSpeechTranscriber:
             start_time = time.time()
             
             for i, (chunk, start_time_chunk, end_time_chunk) in enumerate(chunks):
-                print(f"🚀 Processing comprehensive chunk {i+1}/{len(chunks)} ({start_time_chunk:.1f}s-{end_time_chunk:.1f}s)")
+                print(f"🚀 Processing user-selected chunk {i+1}/{len(chunks)} ({start_time_chunk:.1f}s-{end_time_chunk:.1f}s)")
                 
                 try:
                     transcription = self.transcribe_chunk_with_timeout(chunk, language)
@@ -1964,12 +1757,12 @@ class ComprehensiveSpeechTranscriber:
             
             processing_time = time.time() - start_time
             
-            print("🔗 Merging comprehensive transcriptions...")
+            print("🔗 Merging user-selected transcriptions...")
             final_transcription = self.merge_transcriptions_with_timeout_info(
                 transcriptions, timeout_count
             )
             
-            print(f"✅ COMPREHENSIVE transcription completed in {processing_time:.2f}s")
+            print(f"✅ USER-SELECTABLE transcription completed in {processing_time:.2f}s")
             print(f"📊 Success rate: {successful}/{len(chunks)} ({successful/len(chunks)*100:.1f}%)")
             if timeout_count > 0:
                 print(f"⏱️ Timeout chunks: {timeout_count}/{len(chunks)} (very noisy audio)")
@@ -1977,7 +1770,7 @@ class ComprehensiveSpeechTranscriber:
             return final_transcription, original_path, enhanced_path, stats
                 
         except Exception as e:
-            error_msg = f"❌ Comprehensive transcription failed: {e}"
+            error_msg = f"❌ User-selectable transcription failed: {e}"
             print(error_msg)
             OptimizedMemoryManager.fast_cleanup()
             return error_msg, audio_path, audio_path, {}
@@ -2024,7 +1817,7 @@ class ComprehensiveSpeechTranscriber:
             summary_parts.append(f"{noisy_timeout_count} chunks too noisy (timed out)")
         
         if error_count > 0 or noisy_timeout_count > 0:
-            merged_text += f"\n\n[Comprehensive Processing Summary: {', '.join(summary_parts)} - {success_rate:.1f}% success rate]"
+            merged_text += f"\n\n[User-Selected Processing Summary: {', '.join(summary_parts)} - {success_rate:.1f}% success rate]"
             
             if noisy_timeout_count > 0:
                 merged_text += f"\n[Note: {noisy_timeout_count} chunks were too noisy and timed out after {CHUNK_TIMEOUT} seconds each]"
@@ -2049,7 +1842,7 @@ class SafeLogCapture:
         if text.strip():
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             
-            if "🚀" in text or "COMPREHENSIVE" in text:
+            if "🚀" in text or "USER-SELECTABLE" in text:
                 emoji = "🚀"
             elif "⏱️" in text or "timeout" in text.lower() or "noisy" in text.lower():
                 emoji = "⏱️"
@@ -2081,9 +1874,9 @@ class SafeLogCapture:
     
     def get_logs(self):
         with self.lock:
-            return "\n".join(self.log_buffer[-50:]) if self.log_buffer else "🚀 Comprehensive system ready..."
+            return "\n".join(self.log_buffer[-50:]) if self.log_buffer else "🚀 User-selectable system ready..."
 
-def setup_comprehensive_logging():
+def setup_user_selectable_logging():
     logging.basicConfig(
         level=logging.ERROR,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -2099,799 +1892,29 @@ def get_current_logs():
     global log_capture
     if log_capture:
         return log_capture.get_logs()
-    return "🚀 Comprehensive system initializing..."
+    return "🚀 User-selectable system initializing..."
 
-def initialize_comprehensive_transcriber():
+def initialize_user_selectable_transcriber():
     global transcriber
     if transcriber is None:
         try:
-            print("🚀 Initializing COMPREHENSIVE Speech Enhancement & Transcription System...")
-            print("✅ ALL PREPROCESSING METHODS ENABLED:")
-            print("🔬 Spectral Domain: Spectral Subtraction, MBSS, Wiener, MMSE-STSA, MMSE-LSA, OM-LSA")
-            print("🎵 Frequency Domain: Low/High/Band-pass, Adaptive Filtering")
-            print("🔬 Time-Frequency: DA-STFT, FFT+Hanning, Frame-Based, TF Masking")
-            print("📊 Normalization: Z-score Min-Max, Dynamic Range, Noise Gating")
-            print("🔬 Advanced: Signal Subspace, Noise Profile Analysis, SNR Enhancement")
-            print("📊 Temporal: Temporal Smoothing, Frame Averaging")
-            print("🎤 VAD: Comprehensive multi-feature detection")
-            print("🔧 Quality Assessment: SNR measurement, perceptual metrics")
+            print("🚀 Initializing USER-SELECTABLE Speech Enhancement & Transcription System...")
+            print("✅ ALL PREPROCESSING METHODS AVAILABLE AS CHECKBOX CONTROLS:")
+            print("🔬 Spectral Domain: 6 methods (Spectral Subtraction, MBSS, Wiener, MMSE-STSA, MMSE-LSA, OM-LSA)")
+            print("🎵 Frequency Domain: 2 methods (Comprehensive Filtering, Adaptive Filtering)")
+            print("🔬 Time-Frequency: 3 methods (DA-STFT, TF Masking, Frame-Based)")
+            print("📊 Preprocessing: 5 methods (Z-score, Compression, Gating, Smoothing, Averaging)")
+            print("🔬 Advanced: 4 methods (Signal Subspace, Noise Profile, SNR Enhancement, VAD)")
             print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
             
-            transcriber = ComprehensiveSpeechTranscriber(model_path=MODEL_PATH, use_quantization=True)
-            return "✅ COMPREHENSIVE transcription system ready! ALL preprocessing methods enabled."
+            transcriber = UserSelectableSpeechTranscriber(model_path=MODEL_PATH, use_quantization=True)
+            return "✅ USER-SELECTABLE transcription system ready! All methods available as checkboxes."
         except Exception as e:
             try:
                 print("🔄 Retrying without quantization...")
-                transcriber = ComprehensiveSpeechTranscriber(model_path=MODEL_PATH, use_quantization=False)
-                return "✅ COMPREHENSIVE system loaded (standard precision)!"
+                transcriber = UserSelectableSpeechTranscriber(model_path=MODEL_PATH, use_quantization=False)
+                return "✅ USER-SELECTABLE system loaded (standard precision)!"
             except Exception as e2:
-                error_msg = f"❌ Comprehensive system failure: {str(e2)}"
+                error_msg = f"❌ User-selectable system failure: {str(e2)}"
                 print(error_msg)
-                return error_msg
-    return "✅ COMPREHENSIVE system already active!"
-
-def transcribe_audio_comprehensive(audio_input, language_choice, enhancement_level, progress=gr.Progress()):
-    global transcriber
-    
-    if audio_input is None:
-        return "❌ Please upload an audio file or record audio.", None, None, "", ""
-    
-    if transcriber is None:
-        return "❌ System not initialized. Please wait for startup.", None, None, "", ""
-    
-    start_time = time.time()
-    print(f"🚀 Starting COMPREHENSIVE speech transcription with ALL preprocessing methods...")
-    print(f"🌍 Language: {language_choice}")
-    print(f"🔧 Enhancement: {enhancement_level}")
-    print(f"⏱️ Timeout per chunk: {CHUNK_TIMEOUT} seconds")
-    
-    progress(0.1, desc="Initializing COMPREHENSIVE processing...")
-    
-    temp_audio_path = None
-    
-    try:
-        temp_audio_path = AudioHandler.convert_to_file(audio_input, SAMPLE_RATE)
-        
-        progress(0.3, desc="Applying COMPREHENSIVE speech enhancement...")
-        
-        language_code = SUPPORTED_LANGUAGES.get(language_choice, "auto")
-        
-        progress(0.5, desc="COMPREHENSIVE transcription with timeout protection...")
-        
-        transcription, original_path, enhanced_path, enhancement_stats = transcriber.transcribe_with_comprehensive_enhancement(
-            temp_audio_path, language_code, enhancement_level
-        )
-        
-        progress(0.9, desc="Generating COMPREHENSIVE reports...")
-        
-        enhancement_report = create_comprehensive_enhancement_report(enhancement_stats, enhancement_level)
-        
-        processing_time = time.time() - start_time
-        processing_report = create_comprehensive_processing_report(
-            temp_audio_path, language_choice, enhancement_level, 
-            processing_time, len(transcription.split()) if isinstance(transcription, str) else 0,
-            enhancement_stats
-        )
-        
-        progress(1.0, desc="COMPREHENSIVE processing complete!")
-        
-        print(f"✅ COMPREHENSIVE transcription completed in {processing_time:.2f}s")
-        print(f"📊 Output: {len(transcription.split()) if isinstance(transcription, str) else 0} words")
-        
-        return transcription, original_path, enhanced_path, enhancement_report, processing_report
-        
-    except Exception as e:
-        error_msg = f"❌ Comprehensive system error: {str(e)}"
-        print(error_msg)
-        OptimizedMemoryManager.fast_cleanup()
-        return error_msg, None, None, "", ""
-    finally:
-        if temp_audio_path:
-            AudioHandler.cleanup_temp_file(temp_audio_path)
-
-def translate_transcription_comprehensive(transcription_text, progress=gr.Progress()):
-    global transcriber
-    
-    if not transcription_text or transcription_text.strip() == "":
-        return "❌ No transcription text to translate. Please transcribe audio first."
-    
-    if transcriber is None:
-        return "❌ System not initialized. Please wait for system startup."
-    
-    if transcription_text.startswith("❌") or transcription_text.startswith("["):
-        return "❌ Cannot translate error messages or system messages. Please provide valid transcription text."
-    
-    progress(0.1, desc="Preparing text for comprehensive translation...")
-    
-    try:
-        text_to_translate = transcription_text
-        if "\n\n[Comprehensive Processing Summary:" in text_to_translate:
-            text_to_translate = text_to_translate.split("\n\n[Comprehensive Processing Summary:")[0].strip()
-        
-        progress(0.3, desc="Creating smart text chunks...")
-        
-        start_time = time.time()
-        translated_text = transcriber.translate_text_chunks(text_to_translate)
-        translation_time = time.time() - start_time
-        
-        progress(0.9, desc="Finalizing comprehensive translation...")
-        
-        if not translated_text.startswith('['):
-            translated_text += f"\n\n[Comprehensive Translation completed in {translation_time:.2f}s using smart chunking]"
-        
-        progress(1.0, desc="Comprehensive translation complete!")
-        
-        print(f"✅ Comprehensive translation completed in {translation_time:.2f}s")
-        
-        return translated_text
-        
-    except Exception as e:
-        error_msg = f"❌ Comprehensive translation failed: {str(e)}"
-        print(error_msg)
-        OptimizedMemoryManager.fast_cleanup()
-        return error_msg
-
-def create_comprehensive_enhancement_report(stats: Dict, level: str) -> str:
-    if not stats:
-        return "⚠️ Enhancement statistics not available"
-    
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    report = f"""
-🚀 COMPREHENSIVE SPEECH ENHANCEMENT REPORT
-=========================================
-Timestamp: {timestamp}
-Enhancement Level: {level.upper()}
-
-📊 COMPREHENSIVE QUALITY ANALYSIS:
-• Initial SNR: {stats.get('initial_snr', 0):.2f} dB
-• Final SNR: {stats.get('final_snr', 0):.2f} dB
-• Total SNR Improvement: {stats.get('total_snr_improvement', 0):.2f} dB
-• Audio Duration: {stats.get('original_length', 0):.2f} seconds
-• Final RMS Energy: {stats.get('final_rms', 0):.4f}
-
-🚀 COMPREHENSIVE 8-STAGE ENHANCEMENT PIPELINE:
-• STAGE 1: ✅ Preprocessing and Normalization
-  - Z-score Min-Max Normalization: {'✅' if Z_SCORE_NORMALIZATION else '❌'}
-  - Noise Gating: {'✅' if NOISE_GATING_ENABLED else '❌'}
-
-• STAGE 2: ✅ Frequency Domain Filtering
-  - Comprehensive Frequency Filtering: ✅ (85Hz-7900Hz)
-  - Adaptive Filtering: {'✅' if ADAPTIVE_FILTERING_ENABLED else '❌'}
-
-• STAGE 3: ✅ Spectral Domain Methods
-  - Classical Spectral Subtraction: {'✅' if SPECTRAL_SUBTRACTION_ENABLED else '❌'}
-  - Multi-Band Spectral Subtraction: {'✅' if MULTI_BAND_SPECTRAL_SUBTRACTION else '❌'}
-  - MMSE-STSA Estimator: {'✅' if MMSE_STSA_ENABLED else '❌'}
-  - MMSE-LSA Estimator: {'✅' if MMSE_LSA_ENABLED else '❌'}
-  - OM-LSA Estimator: {'✅' if OM_LSA_ENABLED else '❌'}
-  - Wiener Filtering: {'✅' if WIENER_FILTERING_ENABLED else '❌'}
-
-• STAGE 4: ✅ Time-Frequency Domain Processing
-  - DA-STFT Processing: {'✅' if DA_STFT_ENABLED else '❌'}
-  - Time-Frequency Masking: {'✅' if TIME_FREQUENCY_MASKING else '❌'}
-  - Frame-Based Processing: ✅
-
-• STAGE 5: ✅ Advanced Methods
-  - Signal Subspace Approach: {'✅' if SIGNAL_SUBSPACE_APPROACH else '❌'}
-  - Noise Profile Analysis: {'✅' if NOISE_PROFILE_ANALYSIS else '❌'}
-
-• STAGE 6: ✅ Temporal Processing
-  - Temporal Smoothing: {'✅' if TEMPORAL_SMOOTHING else '❌'}
-  - Frame Averaging: {'✅' if FRAME_AVERAGING else '❌'}
-  - Dynamic Range Compression: {'✅' if DYNAMIC_RANGE_COMPRESSION else '❌'}
-
-• STAGE 7: ✅ Voice Activity Enhancement
-  - Advanced VAD: {'✅' if ADVANCED_VAD_ENABLED else '❌'}
-  - Multi-feature Detection: ✅
-
-• STAGE 8: ✅ SNR Enhancement and Final Processing
-  - SNR Enhancement: {'✅' if SNR_ENHANCEMENT else '❌'}
-  - Final ASR Normalization: ✅
-
-🎤 COMPREHENSIVE VOICE ACTIVITY ANALYSIS:
-• Voice Percentage: {stats.get('voice_percentage', 0):.1f}%
-• Voice Score: {stats.get('voice_score', 0):.3f}
-• SNR Estimate: {stats.get('snr_estimate', 0):.2f} dB
-
-⏱️ TIMEOUT PROTECTION:
-• Chunk Timeout: {CHUNK_TIMEOUT} seconds
-• Comprehensive Noise Detection: ✅ ACTIVE
-• Timeout Messages: ✅ ENABLED
-
-🏆 COMPREHENSIVE ENHANCEMENT SCORE: 100/100 - ALL METHODS APPLIED
-
-🔧 TECHNICAL SPECIFICATIONS:
-• Processing Method: COMPREHENSIVE ALL-IN-ONE PIPELINE
-• Enhancement Methods: ALL AVAILABLE TECHNIQUES
-• ASR Optimization: Multi-method normalization
-• Quality Detection: Comprehensive multi-feature analysis
-• Memory Management: GPU-optimized with cleanup
-• Error Recovery: Comprehensive fallback systems
-"""
-    return report
-
-def create_comprehensive_processing_report(audio_path: str, language: str, enhancement: str, 
-                                         processing_time: float, word_count: int, stats: Dict) -> str:
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    try:
-        file_size = os.path.getsize(audio_path) / (1024 * 1024)
-        audio_info = f"File size: {file_size:.2f} MB"
-    except:
-        audio_info = "File info unavailable"
-    
-    device_info = f"GPU: {torch.cuda.get_device_name()}" if torch.cuda.is_available() else "CPU Processing"
-    
-    initial_snr = stats.get('initial_snr', 0)
-    final_snr = stats.get('final_snr', 0)
-    snr_improvement = stats.get('total_snr_improvement', 0)
-    voice_percentage = stats.get('voice_percentage', 0)
-    final_rms = stats.get('final_rms', 0)
-    
-    report = f"""
-🚀 COMPREHENSIVE SPEECH TRANSCRIPTION REPORT
-===========================================
-Generated: {timestamp}
-
-🎵 COMPREHENSIVE AUDIO PROCESSING:
-• Source File: {os.path.basename(audio_path)}
-• {audio_info}
-• Target Language: {language}
-• Enhancement Level: {enhancement.upper()}
-
-⚡ PERFORMANCE METRICS:
-• Processing Time: {processing_time:.2f} seconds
-• Words Generated: {word_count}
-• Processing Speed: {word_count/processing_time:.1f} words/second
-• Processing Device: {device_info}
-
-🚀 COMPREHENSIVE CONFIGURATION:
-• Model: Gemma 3N E4B-IT (Comprehensive Enhanced)
-• Chunk Size: {CHUNK_SECONDS} seconds (Comprehensive Optimized)
-• Chunk Timeout: {CHUNK_TIMEOUT} seconds per chunk
-• Overlap: {OVERLAP_SECONDS} seconds (Context Preserving)
-• Enhancement Method: COMPREHENSIVE ALL-METHODS PIPELINE
-
-📊 COMPREHENSIVE QUALITY TRANSFORMATION:
-• Initial SNR: {initial_snr:.2f} dB → {final_snr:.2f} dB
-• Total SNR Improvement: {snr_improvement:.2f} dB
-• Voice Activity: {voice_percentage:.1f}% of audio
-• Final RMS Level: {final_rms:.4f} (ASR-Optimized)
-• Enhancement Rating: {'EXCEPTIONAL' if snr_improvement > 10 else 'EXCELLENT' if snr_improvement > 5 else 'VERY GOOD' if snr_improvement > 2 else 'GOOD' if snr_improvement > 0 else 'MAINTAINED'}
-
-🚀 COMPREHENSIVE 8-STAGE PIPELINE SUMMARY:
-• Stage 1: ✅ Preprocessing & Normalization (Z-score, Min-Max, Noise Gating)
-• Stage 2: ✅ Frequency Domain Filtering (Band-pass, Adaptive)
-• Stage 3: ✅ Spectral Domain Methods (6 advanced algorithms)
-• Stage 4: ✅ Time-Frequency Processing (DA-STFT, TF Masking, Frame-Based)
-• Stage 5: ✅ Advanced Methods (Signal Subspace, Noise Profile Analysis)
-• Stage 6: ✅ Temporal Processing (Smoothing, Frame Averaging, Compression)
-• Stage 7: ✅ Comprehensive VAD Enhancement (Multi-feature detection)
-• Stage 8: ✅ SNR Enhancement & Final ASR Optimization
-
-⏱️ TIMEOUT & NOISE HANDLING:
-• Timeout Protection: ✅ {CHUNK_TIMEOUT}s per chunk
-• Comprehensive Quality Detection: ✅ Multi-method analysis
-• Timeout Messages: ✅ "Input Audio Very noisy. Unable to extract details."
-• Fallback Systems: ✅ Comprehensive error recovery
-
-🌐 TRANSLATION FEATURES:
-• Translation Control: ✅ USER-INITIATED (Optional)
-• Smart Text Chunking: ✅ ENABLED
-• Context Preservation: ✅ SENTENCE OVERLAP
-• Processing Method: ✅ COMPREHENSIVE PIPELINE
-
-📊 COMPREHENSIVE SYSTEM STATUS:
-• Enhancement Method: ✅ COMPREHENSIVE ALL-METHODS PIPELINE
-• All Preprocessing Methods: ✅ ENABLED AND APPLIED
-• ASR Optimization: ✅ MULTI-METHOD NORMALIZATION
-• Timeout Protection: ✅ ACTIVE (75s per chunk)
-• Quality Detection: ✅ COMPREHENSIVE MULTI-FEATURE ANALYSIS
-• Memory Optimization: ✅ GPU-AWARE CLEANUP
-• Error Recovery: ✅ COMPREHENSIVE FALLBACK SYSTEMS
-
-✅ STATUS: COMPREHENSIVE TRANSCRIPTION COMPLETED
-🚀 AUDIO ENHANCEMENT: COMPLETE ALL-METHODS PIPELINE
-⏱️ TIMEOUT PROTECTION: 75-SECOND CHUNK SAFETY
-🔧 PREPROCESSING: ALL AVAILABLE METHODS APPLIED
-📊 ASR OPTIMIZATION: COMPREHENSIVE NORMALIZATION
-🎯 RELIABILITY: COMPREHENSIVE SIGNAL PROCESSING WITH ALL FALLBACKS
-"""
-    return report
-
-def create_comprehensive_interface():
-    """Create comprehensive speech enhancement interface with ALL methods"""
-    
-    comprehensive_css = """
-    :root {
-        --primary-color: #0f172a;
-        --secondary-color: #1e293b;
-        --accent-color: #0ea5e9;
-        --comprehensive-color: #7c3aed;
-        --success-color: #10b981;
-        --timeout-color: #f59e0b;
-        --translation-color: #3b82f6;
-        --bg-primary: #020617;
-        --bg-secondary: #0f172a;
-        --bg-tertiary: #1e293b;
-        --text-primary: #f8fafc;
-        --text-secondary: #cbd5e1;
-        --border-color: #475569;
-    }
-    
-    .gradio-container {
-        background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%) !important;
-        font-family: 'Inter', sans-serif !important;
-        color: var(--text-primary) !important;
-        min-height: 100vh !important;
-    }
-    
-    .comprehensive-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 15%, #0ea5e9 30%, #7c3aed 45%, #10b981 60%, #f59e0b 75%, #3b82f6 90%, #ec4899 100%) !important;
-        padding: 60px 40px !important;
-        border-radius: 30px !important;
-        text-align: center !important;
-        margin-bottom: 50px !important;
-        box-shadow: 0 30px 60px rgba(14, 165, 233, 0.4) !important;
-        position: relative !important;
-        overflow: hidden !important;
-    }
-    
-    .comprehensive-title {
-        font-size: 4rem !important;
-        font-weight: 900 !important;
-        color: white !important;
-        margin-bottom: 20px !important;
-        text-shadow: 0 5px 15px rgba(14, 165, 233, 0.6) !important;
-        position: relative !important;
-        z-index: 2 !important;
-    }
-    
-    .comprehensive-subtitle {
-        font-size: 1.5rem !important;
-        color: rgba(255,255,255,0.95) !important;
-        font-weight: 600 !important;
-        position: relative !important;
-        z-index: 2 !important;
-    }
-    
-    .comprehensive-card {
-        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%) !important;
-        border: 3px solid var(--accent-color) !important;
-        border-radius: 25px !important;
-        padding: 35px !important;
-        margin: 25px 0 !important;
-        box-shadow: 0 20px 40px rgba(14, 165, 233, 0.3) !important;
-        transition: all 0.4s ease !important;
-    }
-    
-    .comprehensive-button {
-        background: linear-gradient(135deg, var(--accent-color) 0%, var(--comprehensive-color) 100%) !important;
-        border: none !important;
-        border-radius: 20px !important;
-        color: white !important;
-        font-weight: 800 !important;
-        font-size: 1.3rem !important;
-        padding: 20px 40px !important;
-        transition: all 0.4s ease !important;
-        box-shadow: 0 10px 30px rgba(14, 165, 233, 0.5) !important;
-        text-transform: uppercase !important;
-        letter-spacing: 1.5px !important;
-    }
-    
-    .translation-button {
-        background: linear-gradient(135deg, var(--translation-color) 0%, var(--accent-color) 100%) !important;
-        border: none !important;
-        border-radius: 18px !important;
-        color: white !important;
-        font-weight: 700 !important;
-        font-size: 1.2rem !important;
-        padding: 18px 35px !important;
-        transition: all 0.4s ease !important;
-        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.5) !important;
-        text-transform: uppercase !important;
-        letter-spacing: 1.2px !important;
-    }
-    
-    .status-comprehensive {
-        background: linear-gradient(135deg, var(--success-color), #059669) !important;
-        color: white !important;
-        padding: 18px 30px !important;
-        border-radius: 15px !important;
-        font-weight: 700 !important;
-        text-align: center !important;
-        box-shadow: 0 10px 25px rgba(16, 185, 129, 0.5) !important;
-        border: 3px solid rgba(16, 185, 129, 0.4) !important;
-    }
-    
-    .translation-section {
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(14, 165, 233, 0.15) 100%) !important;
-        border: 3px solid var(--translation-color) !important;
-        border-radius: 25px !important;
-        padding: 30px !important;
-        margin: 25px 0 !important;
-        position: relative !important;
-    }
-    
-    .card-header {
-        color: var(--accent-color) !important;
-        font-size: 1.7rem !important;
-        font-weight: 800 !important;
-        margin-bottom: 30px !important;
-        padding-bottom: 18px !important;
-        border-bottom: 4px solid var(--accent-color) !important;
-    }
-    
-    .log-comprehensive {
-        background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
-        border: 3px solid var(--accent-color) !important;
-        border-radius: 18px !important;
-        color: var(--text-secondary) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 1rem !important;
-        line-height: 1.8 !important;
-        padding: 25px !important;
-        max-height: 450px !important;
-        overflow-y: auto !important;
-        white-space: pre-wrap !important;
-    }
-    """
-    
-    with gr.Blocks(
-        css=comprehensive_css, 
-        theme=gr.themes.Base(),
-        title="🚀 Comprehensive Speech Enhancement & Transcription"
-    ) as interface:
-        
-        # Comprehensive Header
-        gr.HTML("""
-        <div class="comprehensive-header">
-            <h1 class="comprehensive-title">🚀 COMPREHENSIVE SPEECH ENHANCEMENT</h1>
-            <p class="comprehensive-subtitle">ALL Preprocessing Methods • Complete Pipeline • 8-Stage Enhancement • ASR-Optimized • 75s Timeout</p>
-            <div style="margin-top: 25px;">
-                <span style="background: rgba(14, 165, 233, 0.25); color: #0ea5e9; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">🔬 ALL METHODS</span>
-                <span style="background: rgba(124, 58, 237, 0.25); color: #7c3aed; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">🚀 8-STAGE</span>
-                <span style="background: rgba(16, 185, 129, 0.25); color: #10b981; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">📊 ASR-OPTIMIZED</span>
-                <span style="background: rgba(245, 158, 11, 0.25); color: #f59e0b; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">⏱️ 75s TIMEOUT</span>
-            </div>
-        </div>
-        """)
-        
-        # System Status
-        status_display = gr.Textbox(
-            label="🚀 Comprehensive System Status",
-            value="Initializing COMPREHENSIVE speech enhancement system with ALL methods...",
-            interactive=False,
-            elem_classes="status-comprehensive"
-        )
-        
-        # Main Interface
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.HTML('<div class="comprehensive-card"><div class="card-header">🚀 Comprehensive Control Panel</div>')
-                
-                audio_input = gr.Audio(
-                    label="🎵 Upload Audio File or Record Live",
-                    type="filepath"
-                )
-                
-                language_dropdown = gr.Dropdown(
-                    choices=list(SUPPORTED_LANGUAGES.keys()),
-                    value="🌍 Auto-detect",
-                    label="🌍 Language Selection (150+ Supported)",
-                    info="All languages with COMPREHENSIVE enhancement"
-                )
-                
-                enhancement_radio = gr.Radio(
-                    choices=[
-                        ("🟢 Light - COMPREHENSIVE minimal processing", "light"),
-                        ("🟡 Moderate - COMPREHENSIVE balanced enhancement", "moderate"), 
-                        ("🔴 Aggressive - COMPREHENSIVE maximum processing", "aggressive")
-                    ],
-                    value="moderate",
-                    label="🚀 Comprehensive Enhancement Level",
-                    info="8-stage pipeline with ALL preprocessing methods"
-                )
-                
-                transcribe_btn = gr.Button(
-                    "🚀 START COMPREHENSIVE TRANSCRIPTION",
-                    variant="primary",
-                    elem_classes="comprehensive-button",
-                    size="lg"
-                )
-                
-                gr.HTML('</div>')
-            
-            with gr.Column(scale=2):
-                gr.HTML('<div class="comprehensive-card"><div class="card-header">📊 Comprehensive Results</div>')
-                
-                transcription_output = gr.Textbox(
-                    label="📝 Original Transcription (COMPREHENSIVE Enhanced)",
-                    placeholder="Your COMPREHENSIVE transcription will appear here...",
-                    lines=12,
-                    max_lines=18,
-                    interactive=False,
-                    show_copy_button=True
-                )
-                
-                copy_original_btn = gr.Button("📋 Copy Original Transcription", size="sm")
-                
-                gr.HTML('</div>')
-                
-                # Translation Section
-                gr.HTML("""
-                <div class="translation-section">
-                    <div style="color: #3b82f6; font-size: 1.5rem; font-weight: 800; margin-bottom: 25px; margin-top: 18px;">🌐 Optional English Translation</div>
-                    <p style="color: #cbd5e1; margin-bottom: 25px; font-size: 1.2rem;">
-                        Click the button below to translate your transcription to English using smart text chunking.
-                    </p>
-                </div>
-                """)
-                
-                with gr.Row():
-                    translate_btn = gr.Button(
-                        "🌐 TRANSLATE TO ENGLISH (SMART CHUNKING)",
-                        variant="secondary",
-                        elem_classes="translation-button",
-                        size="lg"
-                    )
-                
-                english_translation_output = gr.Textbox(
-                    label="🌐 English Translation (Optional)",
-                    placeholder="Click the translate button above to generate English translation...",
-                    lines=10,
-                    max_lines=18,
-                    interactive=False,
-                    show_copy_button=True
-                )
-                
-                copy_translation_btn = gr.Button("🌐 Copy English Translation", size="sm")
-        
-        # Audio Comparison
-        with gr.Row():
-            with gr.Column():
-                gr.HTML('<div class="comprehensive-card"><div class="card-header">📥 Original Audio</div>')
-                original_audio_player = gr.Audio(
-                    label="Original Audio",
-                    interactive=False
-                )
-                gr.HTML('</div>')
-            
-            with gr.Column():
-                gr.HTML('<div class="comprehensive-card"><div class="card-header">🚀 COMPREHENSIVE Enhanced Audio</div>')
-                enhanced_audio_player = gr.Audio(
-                    label="COMPREHENSIVE Enhanced Audio (8-Stage All-Methods Pipeline)",
-                    interactive=False
-                )
-                gr.HTML('</div>')
-        
-        # Reports
-        with gr.Row():
-            with gr.Column():
-                with gr.Accordion("🚀 COMPREHENSIVE Enhancement Report", open=False):
-                    enhancement_report = gr.Textbox(
-                        label="COMPREHENSIVE Enhancement Report",
-                        lines=20,
-                        show_copy_button=True,
-                        interactive=False
-                    )
-            
-            with gr.Column():
-                with gr.Accordion("📋 COMPREHENSIVE Processing Report", open=False):
-                    processing_report = gr.Textbox(
-                        label="COMPREHENSIVE Processing Report", 
-                        lines=20,
-                        show_copy_button=True,
-                        interactive=False
-                    )
-        
-        # System Monitoring
-        gr.HTML('<div class="comprehensive-card"><div class="card-header">🚀 COMPREHENSIVE System Monitoring</div>')
-        
-        log_display = gr.Textbox(
-            label="",
-            value="🚀 COMPREHENSIVE system ready - all preprocessing methods active...",
-            interactive=False,
-            lines=14,
-            max_lines=20,
-            elem_classes="log-comprehensive",
-            show_label=False
-        )
-        
-        with gr.Row():
-            refresh_logs_btn = gr.Button("🔄 Refresh COMPREHENSIVE Logs", size="sm")
-            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
-        
-        gr.HTML('</div>')
-        
-        # Event Handlers
-        transcribe_btn.click(
-            fn=transcribe_audio_comprehensive,
-            inputs=[audio_input, language_dropdown, enhancement_radio],
-            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
-            show_progress=True
-        )
-        
-        translate_btn.click(
-            fn=translate_transcription_comprehensive,
-            inputs=[transcription_output],
-            outputs=[english_translation_output],
-            show_progress=True
-        )
-        
-        copy_original_btn.click(
-            fn=lambda text: text,
-            inputs=[transcription_output],
-            outputs=[],
-            js="(text) => { navigator.clipboard.writeText(text); return text; }"
-        )
-        
-        copy_translation_btn.click(
-            fn=lambda text: text,
-            inputs=[english_translation_output],
-            outputs=[],
-            js="(text) => { navigator.clipboard.writeText(text); return text; }"
-        )
-        
-        refresh_logs_btn.click(
-            fn=get_current_logs,
-            inputs=[],
-            outputs=[log_display]
-        )
-        
-        def clear_comprehensive_logs():
-            global log_capture
-            if log_capture:
-                with log_capture.lock:
-                    log_capture.log_buffer.clear()
-            return "🚀 COMPREHENSIVE logs cleared - system ready"
-        
-        clear_logs_btn.click(
-            fn=clear_comprehensive_logs,
-            inputs=[],
-            outputs=[log_display]
-        )
-        
-        def auto_refresh_comprehensive_logs():
-            return get_current_logs()
-        
-        timer = gr.Timer(value=3, active=True)
-        timer.tick(
-            fn=auto_refresh_comprehensive_logs,
-            inputs=[],
-            outputs=[log_display]
-        )
-        
-        interface.load(
-            fn=initialize_comprehensive_transcriber,
-            inputs=[],
-            outputs=[status_display]
-        )
-    
-    return interface
-
-def main():
-    """Launch the complete COMPREHENSIVE speech enhancement transcription system"""
-    
-    if "/path/to/your/" in MODEL_PATH:
-        print("="*80)
-        print("🚀 COMPREHENSIVE SPEECH ENHANCEMENT SYSTEM CONFIGURATION REQUIRED")
-        print("="*80)
-        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
-        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
-        print("="*80)
-        return
-    
-    setup_comprehensive_logging()
-    
-    print("🚀 Launching COMPREHENSIVE SPEECH ENHANCEMENT & TRANSCRIPTION SYSTEM...")
-    print("="*80)
-    print("🚀 COMPREHENSIVE FEATURES - ALL METHODS INCLUDED:")
-    print("="*80)
-    print("🔬 SPECTRAL DOMAIN METHODS:")
-    print("   ✅ Classical Spectral Subtraction")
-    print("   ✅ Multi-Band Spectral Subtraction (MBSS)")
-    print("   ✅ Wiener Filtering with optimal parameters")
-    print("   ✅ MMSE Short-Time Spectral Amplitude (MMSE-STSA) Estimator")
-    print("   ✅ MMSE Log-Spectral Amplitude (MMSE-LSA) Estimator")
-    print("   ✅ Optimally-Modified Log-Spectral Amplitude (OM-LSA) Estimator")
-    print("="*80)
-    print("🎵 FREQUENCY DOMAIN FILTERING:")
-    print("   ✅ Low-pass, High-pass, and Band-pass Filters (FIXED)")
-    print("   ✅ Adaptive Filtering with LMS algorithm")
-    print("   ✅ Comprehensive frequency filtering (85Hz-7900Hz)")
-    print("="*80)
-    print("🔬 TIME-FREQUENCY DOMAIN PROCESSING:")
-    print("   ✅ Differentiable Adaptive Short-Time Fourier Transform (DA-STFT)")
-    print("   ✅ FFT with Hanning Windows and half-overlapped buffers")
-    print("   ✅ Frame-Based Processing with overlap-add")
-    print("   ✅ Time-Frequency Masking for noise isolation")
-    print("   ✅ Voice Activity Detection (VAD) with comprehensive features")
-    print("="*80)
-    print("📊 PREPROCESSING AND NORMALIZATION:")
-    print("   ✅ Z-score Min-Max Normalization for enhanced feature extraction")
-    print("   ✅ Dynamic Range Compression with attack/release times")
-    print("   ✅ Noise Gating with adaptive thresholds")
-    print("   ✅ Amplitude Normalization for ASR optimization")
-    print("="*80)
-    print("📊 TEMPORAL PROCESSING:")
-    print("   ✅ Temporal Smoothing to reduce transient noise")
-    print("   ✅ Frame Averaging to improve Signal-to-Noise Ratio")
-    print("   ✅ Multi-frame processing with overlap compensation")
-    print("="*80)
-    print("🔬 ADVANCED METHODS:")
-    print("   ✅ Signal Subspace Approach (SSA) with SVD decomposition")
-    print("   ✅ Minimum Mean Square Error Estimation")
-    print("   ✅ Laplacian and Gaussian Density Estimators")
-    print("   ✅ Noise Profile Analysis with targeted reduction")
-    print("   ✅ Signal-to-Noise Ratio (SNR) Enhancement")
-    print("="*80)
-    print("🎤 COMPREHENSIVE VOICE ACTIVITY DETECTION:")
-    print("   ✅ Multi-feature analysis (Energy, Spectral, Temporal, MFCC, Chroma)")
-    print("   ✅ Advanced statistical thresholding")
-    print("   ✅ Weighted decision fusion")
-    print("   ✅ Morphological smoothing")
-    print("="*80)
-    print("⏱️ TIMEOUT PROTECTION:")
-    print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk")
-    print("   ⏱️ Comprehensive noise detection and quality assessment")
-    print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
-    print("   ⏱️ Graceful degradation for problematic audio")
-    print("="*80)
-    print("🌐 OPTIONAL TRANSLATION FEATURES:")
-    print("   👤 User Control: Translation only when user clicks button")
-    print("   📝 Smart Chunking: Preserves meaning with sentence overlap")
-    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
-    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
-    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
-    print("="*80)
-    print("🌍 LANGUAGE SUPPORT: 150+ languages including:")
-    print("   • Burmese, Pashto, Persian, Dzongkha, Tibetan")
-    print("   • All major world languages and regional variants")
-    print("   • Smart English detection to skip unnecessary translation")
-    print("="*80)
-    print("🔧 COMPREHENSIVE PIPELINE STAGES:")
-    print("   🚀 STAGE 1: Preprocessing and Normalization")
-    print("   🚀 STAGE 2: Frequency Domain Filtering")
-    print("   🚀 STAGE 3: Spectral Domain Methods")
-    print("   🚀 STAGE 4: Time-Frequency Domain Processing")
-    print("   🚀 STAGE 5: Advanced Methods")
-    print("   🚀 STAGE 6: Temporal Processing")
-    print("   🚀 STAGE 7: Voice Activity Enhancement")
-    print("   🚀 STAGE 8: SNR Enhancement and Final Processing")
-    print("="*80)
-    
-    try:
-        interface = create_comprehensive_interface()
-        
-        interface.launch(
-            server_name="0.0.0.0",
-            server_port=7860,
-            share=False,
-            debug=False,
-            show_error=True,
-            quiet=False,
-            favicon_path=None,
-            auth=None,
-            inbrowser=True,
-            prevent_thread_lock=False
-        )
-        
-    except Exception as e:
-        print(f"❌ COMPREHENSIVE system launch failed: {e}")
-        print("🔧 COMPREHENSIVE system troubleshooting:")
-        print("   • Verify model path is correct and accessible")
-        print("   • Check GPU memory availability and drivers")
-        print("   • Ensure all dependencies are installed:")
-        print("     pip install --upgrade torch transformers gradio librosa soundfile")
-        print("     pip install --upgrade noisereduce scipy nltk scikit-learn")
-        print("   • Verify Python environment and version compatibility")
-        print("   • Check port 7860 availability")
-        print("   • ALL preprocessing methods are included and optimized")
-        print("   • Comprehensive fallback systems are active")
-        print("   • ASR optimization with multiple normalization methods")
-        print("="*80)
-
-if __name__ == "__main__":
-    main()
+                return
