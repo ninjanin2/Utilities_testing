@@ -2058,4 +2058,130 @@ def create_comprehensive_adaptive_interface():
 def main():
     """Launch the complete COMPREHENSIVE ADAPTIVE speech transcription system"""
     
-    if "/path/to/your/" in MODEL
+    if "/path/to/your/" in MODEL_PATH:
+        print("="*80)
+        print("🚀 COMPREHENSIVE ADAPTIVE SPEECH TRANSCRIPTION SYSTEM CONFIGURATION REQUIRED")
+        print("="*80)
+        print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
+        print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
+        print("="*80)
+        return
+    
+    setup_comprehensive_logging()
+    
+    print("🚀 Launching COMPREHENSIVE ADAPTIVE SPEECH TRANSCRIPTION SYSTEM...")
+    print("="*80)
+    print("🔧 COMPREHENSIVE GEEKSFORGEEKS PREPROCESSING IMPLEMENTATION:")
+    print("="*80)
+    print("📊 GEEKSFORGEEKS PIPELINE STAGES (ALL 9 TECHNIQUES):")
+    print("   ✅ Stage 1: Audio Resampling (16000 Hz standardization)")
+    print("   ✅ Stage 2: Format Standardization (Mono, float32, validation)")
+    print("   ✅ Stage 3: Advanced Noise Reduction (Spectral gating)")
+    print("   ✅ Stage 4: Butterworth Low-pass Filter (4000 Hz cutoff, Order 4)")
+    print("   ✅ Stage 5: Comprehensive Normalization (Peak + RMS + Z-score)")
+    print("   ✅ Stage 6: Variable Length Handling (Intelligent padding/trimming)")
+    print("   ✅ Stage 7: Model Efficiency Optimization (Pre-emphasis + Windowing + FFT)")
+    print("   ✅ Stage 8: Feature Extraction (MFCCs, spectral characteristics)")
+    print("   ✅ Stage 9: Enhanced Log-Mel Spectrogram (128 mels, optimized parameters)")
+    print("="*80)
+    print("📏 COMPREHENSIVE ADAPTIVE CHUNK SIZING FEATURES:")
+    print("   📏 Default Chunk Size: 30 seconds with 2s overlap")
+    print("   📏 Fallback Chunk Sizes: 10s, 15s, 20s, 40s (automatic)")
+    print("   🔄 Automatic Fallback Mechanism: Success rate monitoring")
+    print("   📊 Success Rate Threshold: ≥70% success rate required")
+    print("   🎯 Optimal Chunk Detection: Automatic adaptation")
+    print("   🔄 Retry Logic: Multiple attempts with different chunk sizes")
+    print("="*80)
+    print("⚡ COMPREHENSIVE ENABLE/DISABLE PREPROCESSING CONTROL:")
+    print("   👤 User Control: Complete enable/disable toggle for ALL 9 techniques")
+    print("   🔧 GeeksforGeeks Pipeline: User can skip comprehensive enhancement")
+    print("   📊 Raw Audio Processing: Available when preprocessing disabled")
+    print("   🎛️ Flexible Processing: Complete user choice driven system")
+    print("   🔧 Technique Selection: Enable/disable entire GeeksforGeeks methodology")
+    print("="*80)
+    print("⏱️ COMPREHENSIVE TIMEOUT PROTECTION:")
+    print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk with noise detection")
+    print("   ⏱️ Comprehensive quality detection and assessment")
+    print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
+    print("   ⏱️ Graceful degradation for problematic audio chunks")
+    print("   ⏱️ Timeout handling with adaptive chunk sizing fallback")
+    print("="*80)
+    print("🌐 COMPREHENSIVE TRANSLATION FEATURES:")
+    print("   👤 User Control: Translation only when user clicks button")
+    print("   📝 Smart Chunking: Preserves meaning with sentence overlap")
+    print(f"   📏 Chunk Size: {MAX_TRANSLATION_CHUNK_SIZE} characters with {SENTENCE_OVERLAP} sentence overlap")
+    print("   🔗 Context Preservation: Intelligent sentence boundary detection")
+    print("   🛡️ Error Recovery: Graceful handling of failed chunks")
+    print("   🌍 Language Detection: Smart English detection to skip unnecessary translation")
+    print("="*80)
+    print("🌍 COMPREHENSIVE LANGUAGE SUPPORT: 150+ languages including:")
+    print("   • European: English, Spanish, French, German, Italian, Portuguese, Russian, Dutch, Swedish, etc.")
+    print("   • Asian: Chinese, Japanese, Korean, Hindi, Bengali, Tamil, Telugu, Thai, Vietnamese, etc.")
+    print("   • Middle Eastern: Arabic, Persian/Farsi, Hebrew, Turkish, Azerbaijani, etc.")
+    print("   • South Asian: Urdu, Gujarati, Marathi, Kannada, Malayalam, Punjabi, Nepali, etc.")
+    print("   • Central Asian: Uzbek, Kazakh, Kyrgyz, Turkmen, Tajik, etc.")
+    print("   • Southeast Asian: Indonesian, Malay, Filipino/Tagalog, Khmer, Lao, Burmese, etc.")
+    print("   • Himalayan: Tibetan, Dzongkha, Sherpa, Tamang, etc.")
+    print("   • Regional variants and minority languages supported")
+    print("="*80)
+    print("🚀 COMPREHENSIVE ADAPTIVE SYSTEM ADVANTAGES:")
+    print("   📏 Comprehensive Adaptive Chunk Sizing: Automatically finds optimal chunk size")
+    print("   🔄 Intelligent Fallback Mechanism: Tries multiple chunk sizes systematically")
+    print("   ⚡ Complete Preprocessing Control: Enable/disable ALL 9 GeeksforGeeks techniques")
+    print("   📊 Success Rate Monitoring: Tracks transcription quality and adapts")
+    print("   🎯 Automatic Optimization: Selects best chunk size and preprocessing combination")
+    print("   🛡️ Comprehensive Error Handling: Multiple fallback systems and timeout protection")
+    print("   💡 Educational Value: Shows which settings work best for different audio types")
+    print("   🔧 GeeksforGeeks Methodology: Complete implementation of all preprocessing techniques")
+    print("   🎛️ User Flexibility: Complete control over preprocessing pipeline")
+    print("   📈 Performance Optimization: GPU-aware memory management and cleanup")
+    print("="*80)
+    print("🔧 TECHNICAL IMPLEMENTATION DETAILS:")
+    print("   🖥️ Model: Gemma 3N E4B-IT with comprehensive adaptive enhancements")
+    print("   🔧 Preprocessing: GeeksforGeeks methodology with ALL 9 techniques")
+    print("   📏 Chunk Management: Adaptive sizing with automatic fallback")
+    print("   ⏱️ Timeout System: 75-second per chunk with noise detection")
+    print("   🧠 Memory Management: GPU-optimized with periodic cleanup")
+    print("   🌍 Language Support: 150+ languages with auto-detection")
+    print("   🌐 Translation: Smart chunking with context preservation")
+    print("   🎛️ Interface: Comprehensive Gradio UI with real-time monitoring")
+    print("="*80)
+    
+    try:
+        interface = create_comprehensive_adaptive_interface()
+        
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            debug=False,
+            show_error=True,
+            quiet=False,
+            favicon_path=None,
+            auth=None,
+            inbrowser=True,
+            prevent_thread_lock=False
+        )
+        
+    except Exception as e:
+        print(f"❌ COMPREHENSIVE ADAPTIVE system launch failed: {e}")
+        print("🔧 COMPREHENSIVE ADAPTIVE system troubleshooting:")
+        print("   • Verify model path is correct and accessible")
+        print("   • Check GPU memory availability and drivers")
+        print("   • Ensure all dependencies are installed:")
+        print("     pip install --upgrade torch transformers gradio librosa soundfile")
+        print("     pip install --upgrade scipy nltk noisereduce scikit-learn")
+        print("   • Verify Python environment and version compatibility")
+        print("   • Check port 7860 availability")
+        print("   • GeeksforGeeks preprocessing: ALL 9 techniques available")
+        print("   • Adaptive chunk sizing: Automatic fallback mechanism active")
+        print("   • Enable/disable preprocessing toggle: User controlled")
+        print("   • Comprehensive fallback systems are active")
+        print("   • ASR optimization with complete GeeksforGeeks methodology")
+        print("   • Fixed hann window function (no longer hanning)")
+        print("   • Comprehensive error recovery systems implemented")
+        print("="*80)
+
+if __name__ == "__main__":
+    main()
+
