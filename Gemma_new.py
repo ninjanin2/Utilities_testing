@@ -1946,11 +1946,116 @@ def create_comprehensive_adaptive_interface():
                 gr.HTML('<div class="comprehensive-adaptive-card"><div class="card-header">📥 Original Audio</div>')
                 original_audio_player = gr.Audio(
                     label="Original Audio",
-                    interactive=False
+                                        interactive=False
                 )
                 gr.HTML('</div>')
+        
+        # Reports
+        with gr.Row():
+            with gr.Column():
+                with gr.Accordion("🚀 COMPREHENSIVE ADAPTIVE Enhancement Report", open=False):
+                    enhancement_report = gr.Textbox(
+                        label="COMPREHENSIVE ADAPTIVE Enhancement Report",
+                        lines=25,
+                        show_copy_button=True,
+                        interactive=False
+                    )
             
             with gr.Column():
-                gr.HTML('<div class="comprehensive-adaptive-card"><div class="card-header">🚀 COMPREHENSIVE ADAPTIVE Enhanced Audio</div>')
-                enhanced_audio_player = gr.Audio(
-                    label="COMPREHENSIVE ADAPTIVE Enhanced Audio (GeeksforGeeks ALL 9 Techniques Pipeline)",
+                with gr.Accordion("📋 COMPREHENSIVE ADAPTIVE Processing Report", open=False):
+                    processing_report = gr.Textbox(
+                        label="COMPREHENSIVE ADAPTIVE Processing Report", 
+                        lines=25,
+                        show_copy_button=True,
+                        interactive=False
+                    )
+        
+        # System Monitoring
+        gr.HTML('<div class="comprehensive-adaptive-card"><div class="card-header">🚀 COMPREHENSIVE ADAPTIVE System Monitoring</div>')
+        
+        log_display = gr.Textbox(
+            label="",
+            value="🚀 COMPREHENSIVE ADAPTIVE system ready - GeeksforGeeks preprocessing with ALL 9 techniques available...",
+            interactive=False,
+            lines=16,
+            max_lines=25,
+            elem_classes="log-comprehensive-adaptive",
+            show_label=False
+        )
+        
+        with gr.Row():
+            refresh_logs_btn = gr.Button("🔄 Refresh COMPREHENSIVE Logs", size="sm")
+            clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
+        
+        gr.HTML('</div>')
+        
+        # Event Handlers
+        transcribe_btn.click(
+            fn=transcribe_audio_comprehensive_adaptive,
+            inputs=[audio_input, language_dropdown, enable_preprocessing],
+            outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
+            show_progress=True
+        )
+        
+        translate_btn.click(
+            fn=translate_transcription_comprehensive_adaptive,
+            inputs=[transcription_output],
+            outputs=[english_translation_output],
+            show_progress=True
+        )
+        
+        copy_original_btn.click(
+            fn=lambda text: text,
+            inputs=[transcription_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        copy_translation_btn.click(
+            fn=lambda text: text,
+            inputs=[english_translation_output],
+            outputs=[],
+            js="(text) => { navigator.clipboard.writeText(text); return text; }"
+        )
+        
+        refresh_logs_btn.click(
+            fn=get_current_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def clear_comprehensive_adaptive_logs():
+            global log_capture
+            if log_capture:
+                with log_capture.lock:
+                    log_capture.log_buffer.clear()
+            return "🚀 COMPREHENSIVE ADAPTIVE logs cleared - system ready"
+        
+        clear_logs_btn.click(
+            fn=clear_comprehensive_adaptive_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        def auto_refresh_comprehensive_adaptive_logs():
+            return get_current_logs()
+        
+        timer = gr.Timer(value=3, active=True)
+        timer.tick(
+            fn=auto_refresh_comprehensive_adaptive_logs,
+            inputs=[],
+            outputs=[log_display]
+        )
+        
+        interface.load(
+            fn=initialize_comprehensive_transcriber,
+            inputs=[],
+            outputs=[status_display]
+        )
+    
+    return interface
+
+def main():
+    """Launch the complete COMPREHENSIVE ADAPTIVE speech transcription system"""
+    
+    if "/path/to/your/" in MODEL
