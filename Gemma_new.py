@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-COMPREHENSIVE SPEECH ENHANCEMENT WITH USER-SELECTABLE PREPROCESSING
-==================================================================
+ADAPTIVE SPEECH TRANSCRIPTION WITH GEEKSFORGEEKS PREPROCESSING
+============================================================
 
-USER-SELECTABLE PREPROCESSING METHODS:
-- Spectral Domain Methods (6 techniques)
-- Frequency Domain Filtering (2 techniques)
-- Time-Frequency Processing (3 techniques)
-- Preprocessing & Normalization (5 techniques)
-- Advanced Methods (4 techniques)
-- All methods available as checkboxes in UI
-- 75-second timeout with noise detection messages
+FEATURES IMPLEMENTED:
+- GeeksforGeeks audio preprocessing methods (resampling, filtering, normalization)
+- Enable/Disable preprocessing toggle button
+- Adaptive chunk sizing with fallback (30s default, 10s, 15s, 20s, 40s fallbacks)
+- Robust error handling and chunk retry mechanism
+- 75-second timeout protection per chunk
 
-Author: User-Controlled AI Audio Processing System
-Version: Checkbox-Controlled Enhancement 15.0
+Author: Adaptive Audio Processing System
+Version: GeeksforGeeks Enhanced 16.0
 """
 
 import os
@@ -30,13 +28,7 @@ import threading
 import queue
 import tempfile
 import soundfile as sf
-from scipy import signal
-from scipy.signal import butter, filtfilt, lfilter, wiener
-from scipy.signal.windows import hann  # FIXED: Use hann instead of hanning
-from scipy.ndimage import median_filter, gaussian_filter1d
-from scipy.stats import zscore
-from scipy.linalg import svd, pinv
-import noisereduce as nr
+from scipy.signal import butter, filtfilt
 import datetime
 import logging
 import warnings
@@ -44,8 +36,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import psutil
 import re
 import nltk
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.decomposition import PCA
 warnings.filterwarnings("ignore")
 
 # CRITICAL FIX: Disable torch dynamo
@@ -61,20 +51,24 @@ except LookupError:
     except:
         pass
 
-# --- USER-SELECTABLE ENHANCEMENT CONFIGURATION ---
+# --- ADAPTIVE CONFIGURATION ---
 MODEL_PATH = "/path/to/your/local/gemma-3n-e4b-it"  # UPDATE THIS PATH
 
-# Enhanced settings
-CHUNK_SECONDS = 12
+# Adaptive chunk settings
+DEFAULT_CHUNK_SECONDS = 30
+FALLBACK_CHUNK_SECONDS = [10, 15, 20, 40]  # Fallback chunk sizes
 OVERLAP_SECONDS = 2
 SAMPLE_RATE = 16000
 CHUNK_TIMEOUT = 75
 MAX_RETRIES = 1
-PROCESSING_THREADS = 1
+
+# GeeksforGeeks preprocessing settings
+GEEKSFORGEEKS_CUTOFF_FREQ = 4000  # Low-pass filter cutoff
+GEEKSFORGEEKS_FILTER_ORDER = 4    # Butterworth filter order
+GEEKSFORGEEKS_TARGET_LENGTH = 16000  # Target length for model input
 
 # Memory settings
 MIN_FREE_MEMORY_GB = 0.3
-MEMORY_SAFETY_MARGIN = 0.1
 CHECK_MEMORY_FREQUENCY = 5
 
 # Translation settings
@@ -82,7 +76,7 @@ MAX_TRANSLATION_CHUNK_SIZE = 1000
 SENTENCE_OVERLAP = 1
 MIN_CHUNK_SIZE = 100
 
-# Expanded language support
+# Language support
 SUPPORTED_LANGUAGES = {
     "🌍 Auto-detect": "auto",
     "🇺🇸 English": "en", "🇪🇸 Spanish": "es", "🇫🇷 French": "fr", "🇩🇪 German": "de",
@@ -112,1017 +106,136 @@ class TimeoutError(Exception):
     """Custom timeout exception"""
     pass
 
-class UserSelectableVoiceActivityDetector:
-    """USER-SELECTABLE: Voice activity detection"""
+class GeeksforGeeksAudioPreprocessor:
+    """GeeksforGeeks-based audio preprocessing implementation"""
     
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
-        self.frame_length = 1024
-        self.hop_length = 256
-        
-    def detect_voice_activity(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Multi-feature VAD"""
+        print(f"🚀 GeeksforGeeks Audio Preprocessor initialized for {sample_rate}Hz")
+    
+    def resample_audio(self, audio_path: str, target_sr: int = None) -> Tuple[np.ndarray, int]:
+        """Resample audio to target sample rate (GeeksforGeeks method)"""
         try:
-            print("🎤 USER-SELECTED voice activity detection...")
+            if target_sr is None:
+                target_sr = self.sample_rate
             
-            # Energy-based features
-            frame_energy = librosa.feature.rms(y=audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
-            
-            # Spectral features
-            spectral_centroids = librosa.feature.spectral_centroid(y=audio, sr=self.sample_rate, hop_length=self.hop_length)[0]
-            spectral_rolloff = librosa.feature.spectral_rolloff(y=audio, sr=self.sample_rate, hop_length=self.hop_length)[0]
-            spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio, sr=self.sample_rate, hop_length=self.hop_length)[0]
-            spectral_contrast = librosa.feature.spectral_contrast(y=audio, sr=self.sample_rate, hop_length=self.hop_length)
-            spectral_flatness = librosa.feature.spectral_flatness(y=audio, hop_length=self.hop_length)[0]
-            
-            # Temporal features
-            zcr = librosa.feature.zero_crossing_rate(audio, frame_length=self.frame_length, hop_length=self.hop_length)[0]
-            
-            # MFCC features
-            mfcc = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=13, hop_length=self.hop_length)
-            mfcc_delta = librosa.feature.delta(mfcc)
-            mfcc_delta2 = librosa.feature.delta(mfcc, order=2)
-            
-            # Chroma features
-            chroma = librosa.feature.chroma_stft(y=audio, sr=self.sample_rate, hop_length=self.hop_length)
-            
-            # Statistical thresholding
-            energy_threshold = np.percentile(frame_energy, 15)
-            centroid_threshold = np.percentile(spectral_centroids, 10)
-            rolloff_threshold = np.percentile(spectral_rolloff, 20)
-            bandwidth_threshold = np.percentile(spectral_bandwidth, 25)
-            contrast_threshold = np.percentile(np.mean(spectral_contrast, axis=0), 20)
-            flatness_threshold = np.percentile(spectral_flatness, 70)
-            zcr_threshold = np.percentile(zcr, 85)
-            mfcc_threshold = np.percentile(np.mean(mfcc, axis=0), 20)
-            
-            # Multi-criteria decision
-            voice_criteria = [
-                frame_energy > energy_threshold,
-                spectral_centroids > centroid_threshold,
-                spectral_rolloff > rolloff_threshold,
-                spectral_bandwidth > bandwidth_threshold,
-                np.mean(spectral_contrast, axis=0) > contrast_threshold,
-                spectral_flatness < flatness_threshold,
-                zcr < zcr_threshold,
-                np.mean(mfcc, axis=0) > mfcc_threshold,
-            ]
-            
-            # Weighted voting
-            weights = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.10]
-            voice_scores = np.zeros(len(frame_energy))
-            
-            for criterion, weight in zip(voice_criteria, weights):
-                voice_scores += criterion.astype(float) * weight
-            
-            # Threshold-based decision
-            voice_activity = voice_scores > 0.35
-            
-            # Smoothing
-            voice_activity = median_filter(voice_activity.astype(float), size=7) > 0.3
-            
-            # Statistics
-            voice_percentage = np.mean(voice_activity) * 100
-            stats = {
-                'voice_percentage': voice_percentage,
-                'avg_energy': np.mean(frame_energy),
-                'avg_spectral_centroid': np.mean(spectral_centroids),
-                'avg_spectral_rolloff': np.mean(spectral_rolloff),
-                'avg_spectral_bandwidth': np.mean(spectral_bandwidth),
-                'avg_spectral_contrast': np.mean(spectral_contrast),
-                'avg_spectral_flatness': np.mean(spectral_flatness),
-                'avg_zcr': np.mean(zcr),
-                'avg_mfcc': np.mean(mfcc),
-                'voice_score': np.mean(voice_scores),
-                'snr_estimate': self.estimate_snr(audio, voice_activity)
-            }
-            
-            return voice_activity, stats
+            print(f"🔄 Resampling audio to {target_sr}Hz...")
+            y, sr = librosa.load(audio_path, sr=target_sr)
+            print(f"✅ Sample rate after resampling: {sr}")
+            return y, sr
             
         except Exception as e:
-            print(f"❌ VAD failed: {e}")
-            return np.ones(len(audio) // self.hop_length, dtype=bool), {}
+            print(f"❌ Resampling failed: {e}")
+            # Fallback: load with original sample rate
+            y, sr = librosa.load(audio_path, sr=None)
+            if sr != target_sr:
+                y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+                sr = target_sr
+            return y, sr
     
-    def estimate_snr(self, audio: np.ndarray, voice_activity: np.ndarray) -> float:
-        """Estimate SNR using VAD"""
+    def butter_lowpass_filter(self, data: np.ndarray, cutoff_freq: int, sample_rate: int, order: int = 4) -> np.ndarray:
+        """Apply Butterworth low-pass filter (GeeksforGeeks method)"""
         try:
-            hop_length = 256
-            vad_expanded = np.repeat(voice_activity, hop_length)
+            print(f"🎵 Applying Butterworth low-pass filter (cutoff: {cutoff_freq}Hz, order: {order})...")
             
-            if len(vad_expanded) > len(audio):
-                vad_expanded = vad_expanded[:len(audio)]
-            elif len(vad_expanded) < len(audio):
-                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
+            nyquist = 0.5 * sample_rate
+            normal_cutoff = cutoff_freq / nyquist
             
-            voice_regions = vad_expanded.astype(bool)
-            noise_regions = ~voice_regions
+            # Ensure cutoff frequency is valid
+            if normal_cutoff >= 1.0:
+                normal_cutoff = 0.99
+                print(f"⚠️ Adjusted cutoff frequency to {normal_cutoff * nyquist:.0f}Hz")
             
-            if np.any(voice_regions) and np.any(noise_regions):
-                signal_power = np.mean(audio[voice_regions]**2)
-                noise_power = np.mean(audio[noise_regions]**2)
-                
-                if noise_power > 0:
-                    snr = 10 * np.log10(signal_power / noise_power)
-                    return snr
+            b, a = butter(order, normal_cutoff, btype='low', analog=False)
+            filtered_data = filtfilt(b, a, data)
             
-            return 20.0
-        except:
-            return 20.0
-
-class UserSelectableSpeechEnhancer:
-    """USER-SELECTABLE: Speech enhancement with checkbox controls"""
-    
-    def __init__(self, sample_rate=16000):
-        self.sample_rate = sample_rate
-        self.vad = UserSelectableVoiceActivityDetector(sample_rate)
-        self.frame_size = 1024
-        self.hop_size = 256
-        self.scaler = StandardScaler()
-        self.minmax_scaler = MinMaxScaler()
-        print(f"🚀 USER-SELECTABLE Speech Enhancer initialized for {sample_rate}Hz")
-    
-    # SPECTRAL DOMAIN METHODS
-    
-    def spectral_subtraction(self, audio: np.ndarray, alpha: float = 2.0, beta: float = 0.01) -> np.ndarray:
-        """Classical spectral subtraction"""
-        try:
-            print("🔬 Applying spectral subtraction...")
-            
-            stft = librosa.stft(audio, n_fft=2048, hop_length=512)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            noise_frames = magnitude[:, :10]
-            noise_estimate = np.mean(noise_frames, axis=1, keepdims=True)
-            
-            enhanced_magnitude = magnitude - alpha * noise_estimate
-            enhanced_magnitude = np.maximum(enhanced_magnitude, beta * magnitude)
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=512)
-            
-            return enhanced_audio.astype(np.float32)
+            print(f"✅ Filtered audio shape: {filtered_data.shape}")
+            return filtered_data.astype(np.float32)
             
         except Exception as e:
-            print(f"❌ Spectral subtraction failed: {e}")
-            return audio
+            print(f"❌ Butterworth filtering failed: {e}")
+            return data.astype(np.float32)
     
-    def multi_band_spectral_subtraction(self, audio: np.ndarray) -> np.ndarray:
-        """Multi-Band Spectral Subtraction"""
+    def convert_to_model_input(self, audio: np.ndarray, target_length: int) -> np.ndarray:
+        """Convert audio to model's expected input format (GeeksforGeeks method)"""
         try:
-            print("🔬 Applying Multi-Band Spectral Subtraction...")
+            print(f"📏 Converting to model input (target length: {target_length})...")
             
-            bands = [
-                (0, 500, 2.5, 0.02),
-                (500, 1500, 2.0, 0.01),
-                (1500, 4000, 1.8, 0.005),
-                (4000, 8000, 2.2, 0.015)
-            ]
-            
-            stft = librosa.stft(audio, n_fft=2048, hop_length=512)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            freqs = librosa.fft_frequencies(sr=self.sample_rate, n_fft=2048)
-            enhanced_magnitude = magnitude.copy()
-            
-            for low_freq, high_freq, alpha, beta in bands:
-                low_bin = np.argmin(np.abs(freqs - low_freq))
-                high_bin = np.argmin(np.abs(freqs - high_freq))
-                
-                band_magnitude = magnitude[low_bin:high_bin, :]
-                band_noise = np.mean(band_magnitude[:, :10], axis=1, keepdims=True)
-                
-                enhanced_band = band_magnitude - alpha * band_noise
-                enhanced_band = np.maximum(enhanced_band, beta * band_magnitude)
-                
-                enhanced_magnitude[low_bin:high_bin, :] = enhanced_band
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=512)
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Multi-Band Spectral Subtraction failed: {e}")
-            return audio
-    
-    def wiener_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Wiener filtering"""
-        try:
-            print("🔧 Applying Wiener filtering...")
-            
-            vad_result, _ = self.vad.detect_voice_activity(audio)
-            hop_length = 256
-            vad_expanded = np.repeat(vad_result, hop_length)
-            
-            if len(vad_expanded) > len(audio):
-                vad_expanded = vad_expanded[:len(audio)]
-            elif len(vad_expanded) < len(audio):
-                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
-            
-            noise_regions = ~vad_expanded.astype(bool)
-            
-            if np.any(noise_regions):
-                noise_power = np.var(audio[noise_regions])
+            if len(audio) < target_length:
+                # Pad with zeros
+                audio = np.pad(audio, (0, target_length - len(audio)))
+                print(f"📈 Padded audio to {len(audio)} samples")
             else:
-                noise_power = np.var(audio) * 0.1
+                # Trim to target length
+                audio = audio[:target_length]
+                print(f"✂️ Trimmed audio to {len(audio)} samples")
             
-            segment_length = 4096
-            overlap = 1024
-            enhanced_audio = np.zeros_like(audio)
-            
-            for i in range(0, len(audio) - segment_length + 1, segment_length - overlap):
-                segment = audio[i:i + segment_length]
-                enhanced_segment = wiener(segment, noise=noise_power)
-                
-                if i == 0:
-                    enhanced_audio[i:i + segment_length] = enhanced_segment
-                else:
-                    blend_start = i
-                    blend_end = i + overlap
-                    
-                    alpha = np.linspace(0, 1, overlap)
-                    enhanced_audio[blend_start:blend_end] = (
-                        (1 - alpha) * enhanced_audio[blend_start:blend_end] +
-                        alpha * enhanced_segment[:overlap]
-                    )
-                    enhanced_audio[blend_end:i + segment_length] = enhanced_segment[overlap:]
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Wiener filtering failed: {e}")
-            return audio
-    
-    def mmse_stsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """MMSE-STSA Estimator"""
-        try:
-            print("🔬 Applying MMSE-STSA estimator...")
-            
-            stft = librosa.stft(audio, n_fft=1024, hop_length=256)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            noise_magnitude = np.mean(magnitude[:, :10], axis=1, keepdims=True)
-            noise_power = noise_magnitude ** 2
-            
-            alpha = 0.98
-            signal_power = magnitude ** 2
-            
-            gamma_k = np.maximum(signal_power / noise_power - 1, 0.1)
-            nu_k = gamma_k / (1 + gamma_k)
-            
-            def modified_bessel_i0(x):
-                return np.exp(x) / np.sqrt(2 * np.pi * x) * (1 + 1/(8*x))
-            
-            def modified_bessel_i1(x):
-                return modified_bessel_i0(x) * (1 - 1/(2*x))
-            
-            v_k = nu_k * gamma_k / (1 + gamma_k)
-            v_k = np.clip(v_k, 0.001, 10)
-            
-            G_k = nu_k * np.exp(-v_k/2) * ((1 + v_k) * modified_bessel_i0(v_k/2) + v_k * modified_bessel_i1(v_k/2))
-            
-            enhanced_magnitude = G_k * magnitude
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ MMSE-STSA failed: {e}")
-            return self.spectral_subtraction(audio)
-    
-    def mmse_lsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """MMSE-LSA Estimator"""
-        try:
-            print("🔬 Applying MMSE-LSA estimator...")
-            
-            stft = librosa.stft(audio, n_fft=1024, hop_length=256)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            log_magnitude = np.log(magnitude + 1e-10)
-            noise_log_magnitude = np.mean(log_magnitude[:, :10], axis=1, keepdims=True)
-            
-            snr = log_magnitude - noise_log_magnitude
-            
-            alpha = 2.0
-            beta = 0.1
-            
-            G = np.exp(alpha * snr / (1 + np.exp(alpha * snr)))
-            G = np.maximum(G, beta)
-            
-            enhanced_log_magnitude = log_magnitude + np.log(G + 1e-10)
-            enhanced_magnitude = np.exp(enhanced_log_magnitude)
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ MMSE-LSA failed: {e}")
-            return self.spectral_subtraction(audio)
-    
-    def om_lsa_estimator(self, audio: np.ndarray) -> np.ndarray:
-        """OM-LSA Estimator"""
-        try:
-            print("🔬 Applying OM-LSA estimator...")
-            
-            stft = librosa.stft(audio, n_fft=1024, hop_length=256)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            alpha_d = 0.95
-            alpha_s = 0.9
-            beta = 0.005
-            
-            num_frames = magnitude.shape[1]
-            num_bins = magnitude.shape[0]
-            
-            noise_power = np.mean(magnitude[:, :10] ** 2, axis=1, keepdims=True)
-            
-            gamma_k = np.zeros_like(magnitude)
-            xi_k = np.ones_like(magnitude)
-            p_k = np.zeros_like(magnitude)
-            
-            enhanced_magnitude = np.zeros_like(magnitude)
-            
-            for frame in range(num_frames):
-                gamma_k[:, frame:frame+1] = magnitude[:, frame:frame+1] ** 2 / noise_power
-                
-                if frame > 0:
-                    xi_k_dd = alpha_d * (enhanced_magnitude[:, frame-1:frame] ** 2 / noise_power) + \
-                             (1 - alpha_d) * np.maximum(gamma_k[:, frame:frame+1] - 1, 0.1)
-                    xi_k[:, frame:frame+1] = xi_k_dd
-                
-                v_k = gamma_k[:, frame:frame+1] * xi_k[:, frame:frame+1] / (1 + xi_k[:, frame:frame+1])
-                
-                p_k[:, frame:frame+1] = 1 / (1 + np.exp(-2 * (v_k - 1)))
-                
-                G_k = xi_k[:, frame:frame+1] / (1 + xi_k[:, frame:frame+1])
-                
-                G_k = p_k[:, frame:frame+1] * G_k + (1 - p_k[:, frame:frame+1]) * beta
-                
-                G_k = np.maximum(G_k, beta)
-                
-                enhanced_magnitude[:, frame:frame+1] = G_k * magnitude[:, frame:frame+1]
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ OM-LSA failed: {e}")
-            return self.mmse_stsa_estimator(audio)
-    
-    # FREQUENCY DOMAIN FILTERING
-    
-    def comprehensive_frequency_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Frequency filtering with FIXED parameters"""
-        try:
-            print("🎵 Applying frequency filtering...")
-            
-            # High-pass filter
-            high_cutoff = 85
-            high_b, high_a = butter(4, high_cutoff, btype='high', fs=self.sample_rate)
-            audio = filtfilt(high_b, high_a, audio)
-            
-            # Low-pass filter (FIXED: 7900 Hz instead of 8000 Hz)
-            low_cutoff = 7900
-            low_b, low_a = butter(4, low_cutoff, btype='low', fs=self.sample_rate)
-            audio = filtfilt(low_b, low_a, audio)
-            
+            print(f"✅ Model input shape: {audio.shape}")
             return audio.astype(np.float32)
             
         except Exception as e:
-            print(f"❌ Frequency filtering failed: {e}")
-            return audio
+            print(f"❌ Model input conversion failed: {e}")
+            return audio.astype(np.float32)
     
-    def adaptive_filtering(self, audio: np.ndarray) -> np.ndarray:
-        """Adaptive filtering with LMS"""
+    def compute_logmel_spectrogram(self, audio: np.ndarray, sr: int, n_mels: int = 128, hop_length: int = 512) -> np.ndarray:
+        """Compute log-mel spectrogram (GeeksforGeeks method)"""
         try:
-            print("🔧 Applying adaptive filtering...")
+            print(f"📊 Computing log-mel spectrogram (n_mels: {n_mels}, hop_length: {hop_length})...")
             
-            filter_length = 32
-            mu = 0.01
+            mel_spectrogram = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=n_mels, hop_length=hop_length)
+            logmel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
             
-            w = np.zeros(filter_length)
-            filtered_audio = np.zeros_like(audio)
-            
-            for n in range(filter_length, len(audio)):
-                x = audio[n-filter_length:n][::-1]
-                y = np.dot(w, x)
-                filtered_audio[n] = y
-                
-                d = audio[n-1] if n > 0 else 0
-                e = d - y
-                
-                w = w + mu * e * x
-            
-            filtered_audio[:filter_length] = audio[:filter_length]
-            
-            return filtered_audio.astype(np.float32)
+            print(f"✅ Log-mel spectrogram shape: {logmel_spectrogram.shape}")
+            return logmel_spectrogram
             
         except Exception as e:
-            print(f"❌ Adaptive filtering failed: {e}")
-            return audio
+            print(f"❌ Log-mel spectrogram computation failed: {e}")
+            return np.array([])
     
-    # TIME-FREQUENCY DOMAIN PROCESSING
-    
-    def da_stft_processing(self, audio: np.ndarray) -> np.ndarray:
-        """DA-STFT processing with FIXED hann window"""
+    def apply_geeksforgeeks_preprocessing(self, audio_path: str) -> Tuple[np.ndarray, Dict]:
+        """Apply complete GeeksforGeeks preprocessing pipeline"""
         try:
-            print("🔬 Applying DA-STFT processing...")
+            print("🚀 Applying GEEKSFORGEEKS preprocessing pipeline...")
+            stats = {}
             
-            frame_energy = librosa.feature.rms(y=audio, frame_length=1024, hop_length=512)[0]
-            avg_energy = np.mean(frame_energy)
+            # Step 1: Resample audio
+            resampled_audio, sr = self.resample_audio(audio_path, self.sample_rate)
+            stats['original_length'] = len(resampled_audio) / sr
+            stats['sample_rate'] = sr
             
-            if avg_energy > 0.1:
-                n_fft = 2048
-            elif avg_energy > 0.05:
-                n_fft = 1024
-            else:
-                n_fft = 512
+            # Step 2: Apply filtering
+            filtered_audio = self.butter_lowpass_filter(
+                resampled_audio, 
+                GEEKSFORGEEKS_CUTOFF_FREQ, 
+                sr, 
+                GEEKSFORGEEKS_FILTER_ORDER
+            )
             
-            hop_length = n_fft // 4
+            # Step 3: Normalize amplitude
+            if np.max(np.abs(filtered_audio)) > 0:
+                filtered_audio = filtered_audio / np.max(np.abs(filtered_audio)) * 0.95
             
-            # FIXED: Use hann instead of hanning
-            window = hann(n_fft)
-            stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length, window=window)
+            # Step 4: Final quality control
+            filtered_audio = np.clip(filtered_audio, -0.99, 0.99)
             
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
+            # Calculate final stats
+            stats['final_rms'] = np.sqrt(np.mean(filtered_audio**2))
+            stats['final_length'] = len(filtered_audio) / sr
+            stats['preprocessing_applied'] = True
             
-            enhanced_magnitude = magnitude.copy()
+            print(f"✅ GEEKSFORGEEKS preprocessing completed")
+            print(f"📊 Final RMS level: {stats['final_rms']:.4f}")
             
-            freqs = librosa.fft_frequencies(sr=self.sample_rate, n_fft=n_fft)
-            
-            for i, freq in enumerate(freqs):
-                if 85 <= freq <= 4000:
-                    enhanced_magnitude[i, :] *= 1.1
-                elif freq > 6000:
-                    enhanced_magnitude[i, :] *= 0.8
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=hop_length, window=window)
-            
-            return enhanced_audio.astype(np.float32)
+            return filtered_audio.astype(np.float32), stats
             
         except Exception as e:
-            print(f"❌ DA-STFT processing failed: {e}")
-            return audio
-    
-    def time_frequency_masking(self, audio: np.ndarray) -> np.ndarray:
-        """Time-frequency masking"""
-        try:
-            print("🎭 Applying time-frequency masking...")
-            
-            stft = librosa.stft(audio, n_fft=1024, hop_length=256)
-            magnitude = np.abs(stft)
-            phase = np.angle(stft)
-            
-            noise_estimate = np.mean(magnitude[:, :10], axis=1, keepdims=True)
-            snr = magnitude / (noise_estimate + 1e-10)
-            
-            threshold = 2.0
-            binary_mask = (snr > threshold).astype(float)
-            
-            from scipy.ndimage import gaussian_filter
-            smooth_mask = gaussian_filter(binary_mask, sigma=1.0)
-            
-            soft_mask = smooth_mask * 0.9 + 0.1
-            
-            enhanced_magnitude = magnitude * soft_mask
-            
-            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
-            enhanced_audio = librosa.istft(enhanced_stft, hop_length=256)
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Time-frequency masking failed: {e}")
-            return audio
-    
-    def frame_based_processing(self, audio: np.ndarray) -> np.ndarray:
-        """Frame-based processing"""
-        try:
-            print("📊 Applying frame-based processing...")
-            
-            frame_length = 1024
-            hop_length = 256
-            overlap = frame_length - hop_length
-            
-            # FIXED: Use hann instead of hanning
-            window = hann(frame_length)
-            
-            enhanced_audio = np.zeros_like(audio)
-            
-            for i in range(0, len(audio) - frame_length + 1, hop_length):
-                frame = audio[i:i + frame_length] * window
-                
-                frame_fft = np.fft.fft(frame)
-                magnitude = np.abs(frame_fft)
-                phase = np.angle(frame_fft)
-                
-                enhanced_magnitude = magnitude ** 0.9
-                
-                enhanced_fft = enhanced_magnitude * np.exp(1j * phase)
-                enhanced_frame = np.real(np.fft.ifft(enhanced_fft))
-                
-                enhanced_frame *= window
-                enhanced_audio[i:i + frame_length] += enhanced_frame
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Frame-based processing failed: {e}")
-            return audio
-    
-    # PREPROCESSING AND NORMALIZATION
-    
-    def z_score_min_max_normalization(self, audio: np.ndarray) -> np.ndarray:
-        """Z-score Min-Max normalization"""
-        try:
-            print("📊 Applying Z-score Min-Max normalization...")
-            
-            audio_zscore = zscore(audio)
-            audio_zscore = np.nan_to_num(audio_zscore, nan=0.0, posinf=1.0, neginf=-1.0)
-            
-            audio_normalized = self.minmax_scaler.fit_transform(audio_zscore.reshape(-1, 1)).flatten()
-            audio_normalized = audio_normalized * 1.6 - 0.8
-            
-            return audio_normalized.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Z-score Min-Max normalization failed: {e}")
-            return librosa.util.normalize(audio).astype(np.float32)
-    
-    def dynamic_range_compression(self, audio: np.ndarray) -> np.ndarray:
-        """Dynamic range compression"""
-        try:
-            print("📊 Applying dynamic range compression...")
-            
-            threshold = 0.3
-            ratio = 4.0
-            attack_time = 0.003
-            release_time = 0.100
-            
-            attack_samples = int(attack_time * self.sample_rate)
-            release_samples = int(release_time * self.sample_rate)
-            
-            envelope = 0.0
-            compressed_audio = np.zeros_like(audio)
-            
-            for i, sample in enumerate(audio):
-                input_level = abs(sample)
-                
-                if input_level > envelope:
-                    envelope += (input_level - envelope) / attack_samples
-                else:
-                    envelope += (input_level - envelope) / release_samples
-                
-                if envelope > threshold:
-                    excess = envelope - threshold
-                    compressed_excess = excess / ratio
-                    gain = (threshold + compressed_excess) / envelope if envelope > 0 else 1.0
-                else:
-                    gain = 1.0
-                
-                compressed_audio[i] = sample * gain
-            
-            return compressed_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Dynamic range compression failed: {e}")
-            return audio
-    
-    def noise_gating(self, audio: np.ndarray, threshold_db: float = -40.0) -> np.ndarray:
-        """Noise gating"""
-        try:
-            print("🚪 Applying noise gating...")
-            
-            threshold_linear = 10 ** (threshold_db / 20.0)
-            
-            frame_length = 1024
-            hop_length = 256
-            
-            rms = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop_length)[0]
-            
-            rms_expanded = np.repeat(rms, hop_length)
-            if len(rms_expanded) > len(audio):
-                rms_expanded = rms_expanded[:len(audio)]
-            elif len(rms_expanded) < len(audio):
-                rms_expanded = np.pad(rms_expanded, (0, len(audio) - len(rms_expanded)), mode='edge')
-            
-            gate = (rms_expanded > threshold_linear).astype(float)
-            
-            gate_smooth = gaussian_filter1d(gate, sigma=2.0)
-            
-            min_gain = 0.1
-            gate_gain = gate_smooth * (1 - min_gain) + min_gain
-            
-            gated_audio = audio * gate_gain
-            
-            return gated_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Noise gating failed: {e}")
-            return audio
-    
-    def temporal_smoothing(self, audio: np.ndarray, window_size: int = 5) -> np.ndarray:
-        """Temporal smoothing"""
-        try:
-            print("📈 Applying temporal smoothing...")
-            
-            if window_size > len(audio):
-                window_size = len(audio) // 10
-            
-            kernel = np.ones(window_size) / window_size
-            
-            smoothed_audio = np.convolve(audio, kernel, mode='same')
-            
-            return smoothed_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Temporal smoothing failed: {e}")
-            return audio
-    
-    def frame_averaging(self, audio: np.ndarray, num_frames: int = 3) -> np.ndarray:
-        """Frame averaging"""
-        try:
-            print("📊 Applying frame averaging...")
-            
-            frame_length = 1024
-            hop_length = 512
-            
-            frames = []
-            for i in range(0, len(audio) - frame_length + 1, hop_length):
-                frame = audio[i:i + frame_length]
-                frames.append(frame)
-            
-            if len(frames) < num_frames:
-                return audio
-            
-            averaged_audio = np.zeros_like(audio)
-            
-            for i in range(len(frames)):
-                start_idx = i * hop_length
-                end_idx = start_idx + frame_length
-                
-                start_frame = max(0, i - num_frames // 2)
-                end_frame = min(len(frames), start_frame + num_frames)
-                
-                avg_frame = np.mean(frames[start_frame:end_frame], axis=0)
-                
-                if end_idx <= len(averaged_audio):
-                    averaged_audio[start_idx:end_idx] += avg_frame
-                else:
-                    remaining = len(averaged_audio) - start_idx
-                    averaged_audio[start_idx:] += avg_frame[:remaining]
-            
-            return averaged_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Frame averaging failed: {e}")
-            return audio
-    
-    # ADVANCED METHODS
-    
-    def signal_subspace_approach(self, audio: np.ndarray) -> np.ndarray:
-        """Signal Subspace Approach"""
-        try:
-            print("🔬 Applying Signal Subspace Approach...")
-            
-            frame_length = 256
-            hop_length = 128
-            
-            frames = []
-            for i in range(0, len(audio) - frame_length + 1, hop_length):
-                frames.append(audio[i:i + frame_length])
-            
-            if len(frames) < 2:
-                return audio
-            
-            X = np.array(frames).T
-            
-            U, s, Vt = svd(X, full_matrices=False)
-            
-            total_energy = np.sum(s**2)
-            cumulative_energy = np.cumsum(s**2)
-            
-            signal_dim = np.argmax(cumulative_energy / total_energy > 0.95) + 1
-            signal_dim = max(1, min(signal_dim, len(s) // 2))
-            
-            X_clean = U[:, :signal_dim] @ np.diag(s[:signal_dim]) @ Vt[:signal_dim, :]
-            
-            enhanced_audio = np.zeros_like(audio)
-            for i, frame in enumerate(X_clean.T):
-                start_idx = i * hop_length
-                end_idx = start_idx + frame_length
-                if end_idx <= len(enhanced_audio):
-                    enhanced_audio[start_idx:end_idx] += frame
-                else:
-                    remaining = len(enhanced_audio) - start_idx
-                    enhanced_audio[start_idx:] += frame[:remaining]
-            
-            return enhanced_audio.astype(np.float32)
-            
-        except Exception as e:
-            print(f"❌ Signal Subspace Approach failed: {e}")
-            return audio
-    
-    def noise_profile_analysis(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Noise profile analysis"""
-        try:
-            print("🔍 Performing noise profile analysis...")
-            
-            vad_result, vad_stats = self.vad.detect_voice_activity(audio)
-            
-            hop_length = 256
-            vad_expanded = np.repeat(vad_result, hop_length)
-            
-            if len(vad_expanded) > len(audio):
-                vad_expanded = vad_expanded[:len(audio)]
-            elif len(vad_expanded) < len(audio):
-                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
-            
-            noise_regions = ~vad_expanded.astype(bool)
-            
-            noise_profile = {}
-            
-            if np.any(noise_regions):
-                noise_samples = audio[noise_regions]
-                
-                noise_profile['mean'] = np.mean(noise_samples)
-                noise_profile['std'] = np.std(noise_samples)
-                noise_profile['rms'] = np.sqrt(np.mean(noise_samples**2))
-                noise_profile['peak'] = np.max(np.abs(noise_samples))
-                
-                noise_stft = librosa.stft(noise_samples[:min(len(noise_samples), 8192)])
-                noise_magnitude = np.abs(noise_stft)
-                noise_profile['spectral_centroid'] = np.mean(librosa.feature.spectral_centroid(S=noise_magnitude))
-                noise_profile['spectral_bandwidth'] = np.mean(librosa.feature.spectral_bandwidth(S=noise_magnitude))
-                
-                if noise_profile['spectral_centroid'] > 3000:
-                    noise_profile['type'] = 'high_frequency'
-                elif noise_profile['spectral_centroid'] < 1000:
-                    noise_profile['type'] = 'low_frequency'
-                else:
-                    noise_profile['type'] = 'broadband'
-                
-                enhanced_audio = self.targeted_noise_reduction(audio, noise_profile)
-                
-            else:
-                noise_profile['type'] = 'unknown'
-                enhanced_audio = audio
-            
-            return enhanced_audio.astype(np.float32), noise_profile
-            
-        except Exception as e:
-            print(f"❌ Noise profile analysis failed: {e}")
-            return audio, {}
-    
-    def targeted_noise_reduction(self, audio: np.ndarray, noise_profile: Dict) -> np.ndarray:
-        """Targeted noise reduction"""
-        try:
-            noise_type = noise_profile.get('type', 'broadband')
-            
-            if noise_type == 'high_frequency':
-                cutoff = 6000
-                b, a = butter(6, cutoff, btype='low', fs=self.sample_rate)
-                audio = filtfilt(b, a, audio)
-                
-            elif noise_type == 'low_frequency':
-                cutoff = 120
-                b, a = butter(6, cutoff, btype='high', fs=self.sample_rate)
-                audio = filtfilt(b, a, audio)
-                
-            else:
-                audio = self.comprehensive_frequency_filtering(audio)
-            
-            return audio
-            
-        except Exception as e:
-            print(f"❌ Targeted noise reduction failed: {e}")
-            return audio
-    
-    def snr_enhancement(self, audio: np.ndarray) -> Tuple[np.ndarray, float]:
-        """SNR enhancement"""
-        try:
-            print("📊 Applying SNR enhancement...")
-            
-            initial_snr = self.measure_snr(audio)
-            
-            enhanced_audio = audio.copy()
-            
-            enhanced_audio = self.spectral_subtraction(enhanced_audio, alpha=1.5, beta=0.05)
-            enhanced_audio = self.wiener_filtering(enhanced_audio)
-            enhanced_audio = self.dynamic_range_compression(enhanced_audio)
-            
-            final_snr = self.measure_snr(enhanced_audio)
-            snr_improvement = final_snr - initial_snr
-            
-            print(f"📊 SNR improved from {initial_snr:.2f} dB to {final_snr:.2f} dB (+{snr_improvement:.2f} dB)")
-            
-            return enhanced_audio.astype(np.float32), snr_improvement
-            
-        except Exception as e:
-            print(f"❌ SNR enhancement failed: {e}")
-            return audio, 0.0
-    
-    def advanced_vad_enhancement(self, audio: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Advanced VAD enhancement"""
-        try:
-            print("🎤 Advanced VAD enhancement...")
-            
-            vad_result, vad_stats = self.vad.detect_voice_activity(audio)
-            
-            hop_length = 256
-            vad_expanded = np.repeat(vad_result, hop_length)
-            
-            if len(vad_expanded) > len(audio):
-                vad_expanded = vad_expanded[:len(audio)]
-            elif len(vad_expanded) < len(audio):
-                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
-            
-            enhanced_audio = audio.copy()
-            voice_regions = vad_expanded.astype(bool)
-            
-            if np.any(voice_regions):
-                enhanced_audio[voice_regions] *= 1.05
-            
-            noise_regions = ~voice_regions
-            if np.any(noise_regions):
-                enhanced_audio[noise_regions] *= 0.95
-            
-            return enhanced_audio.astype(np.float32), vad_stats
-            
-        except Exception as e:
-            print(f"❌ Advanced VAD enhancement failed: {e}")
-            return audio, {}
-    
-    def measure_snr(self, audio: np.ndarray) -> float:
-        """Measure SNR"""
-        try:
-            vad_result, _ = self.vad.detect_voice_activity(audio)
-            
-            hop_length = 256
-            vad_expanded = np.repeat(vad_result, hop_length)
-            
-            if len(vad_expanded) > len(audio):
-                vad_expanded = vad_expanded[:len(audio)]
-            elif len(vad_expanded) < len(audio):
-                vad_expanded = np.pad(vad_expanded, (0, len(audio) - len(vad_expanded)), mode='edge')
-            
-            voice_regions = vad_expanded.astype(bool)
-            noise_regions = ~voice_regions
-            
-            if np.any(voice_regions) and np.any(noise_regions):
-                signal_power = np.mean(audio[voice_regions]**2)
-                noise_power = np.mean(audio[noise_regions]**2)
-                
-                if noise_power > 0:
-                    snr = 10 * np.log10(signal_power / noise_power)
-                    return snr
-            
-            frame_energy = librosa.feature.rms(y=audio, frame_length=1024, hop_length=512)[0]
-            signal_power = np.percentile(frame_energy, 90)**2
-            noise_power = np.percentile(frame_energy, 10)**2
-            
-            if noise_power > 0:
-                snr = 10 * np.log10(signal_power / noise_power)
-                return snr
-            
-            return 20.0
-            
-        except Exception as e:
-            print(f"❌ SNR measurement failed: {e}")
-            return 20.0
-    
-    # USER-SELECTABLE PIPELINE
-    
-    def user_selectable_enhancement(self, audio: np.ndarray, selected_methods: Dict, enhancement_level: str = "moderate") -> Tuple[np.ndarray, Dict]:
-        """USER-SELECTABLE: Enhancement pipeline with checkbox controls"""
-        original_audio = audio.copy()
-        stats = {'enhancement_level': enhancement_level, 'selected_methods': selected_methods}
-        
-        try:
-            print(f"🚀 Starting USER-SELECTABLE enhancement pipeline ({enhancement_level})...")
-            print("✅ Applying only user-selected methods")
-            
-            initial_snr = self.measure_snr(audio)
-            stats['initial_snr'] = initial_snr
-            stats['original_length'] = len(audio) / self.sample_rate
-            
-            print(f"📊 Initial SNR: {initial_snr:.2f} dB")
-            
-            # STAGE 1: PREPROCESSING AND NORMALIZATION
-            if selected_methods.get('preprocessing_methods'):
-                print("🔧 STAGE 1: User-selected preprocessing methods")
-                
-                if "Z-score Min-Max Normalization" in selected_methods['preprocessing_methods']:
-                    audio = self.z_score_min_max_normalization(audio)
-                
-                if "Noise Gating" in selected_methods['preprocessing_methods']:
-                    audio = self.noise_gating(audio)
-                
-                if "Dynamic Range Compression" in selected_methods['preprocessing_methods']:
-                    audio = self.dynamic_range_compression(audio)
-                
-                if "Temporal Smoothing" in selected_methods['preprocessing_methods']:
-                    audio = self.temporal_smoothing(audio)
-                
-                if "Frame Averaging" in selected_methods['preprocessing_methods']:
-                    audio = self.frame_averaging(audio)
-            
-            # STAGE 2: FREQUENCY DOMAIN FILTERING
-            if selected_methods.get('frequency_methods'):
-                print("🎵 STAGE 2: User-selected frequency domain methods")
-                
-                if "Comprehensive Frequency Filtering" in selected_methods['frequency_methods']:
-                    audio = self.comprehensive_frequency_filtering(audio)
-                
-                if "Adaptive Filtering" in selected_methods['frequency_methods']:
-                    audio = self.adaptive_filtering(audio)
-            
-            # STAGE 3: SPECTRAL DOMAIN METHODS
-            if selected_methods.get('spectral_methods'):
-                print("🔬 STAGE 3: User-selected spectral domain methods")
-                
-                if "Spectral Subtraction" in selected_methods['spectral_methods']:
-                    audio = self.spectral_subtraction(audio)
-                
-                if "Multi-Band Spectral Subtraction" in selected_methods['spectral_methods']:
-                    audio = self.multi_band_spectral_subtraction(audio)
-                
-                if "Wiener Filtering" in selected_methods['spectral_methods']:
-                    audio = self.wiener_filtering(audio)
-                
-                if "MMSE-STSA Estimator" in selected_methods['spectral_methods']:
-                    audio = self.mmse_stsa_estimator(audio)
-                
-                if "MMSE-LSA Estimator" in selected_methods['spectral_methods']:
-                    audio = self.mmse_lsa_estimator(audio)
-                
-                if "OM-LSA Estimator" in selected_methods['spectral_methods']:
-                    audio = self.om_lsa_estimator(audio)
-            
-            # STAGE 4: TIME-FREQUENCY DOMAIN PROCESSING
-            if selected_methods.get('time_frequency_methods'):
-                print("🔬 STAGE 4: User-selected time-frequency methods")
-                
-                if "DA-STFT Processing" in selected_methods['time_frequency_methods']:
-                    audio = self.da_stft_processing(audio)
-                
-                if "Time-Frequency Masking" in selected_methods['time_frequency_methods']:
-                    audio = self.time_frequency_masking(audio)
-                
-                if "Frame-Based Processing" in selected_methods['time_frequency_methods']:
-                    audio = self.frame_based_processing(audio)
-            
-            # STAGE 5: ADVANCED METHODS
-            if selected_methods.get('advanced_methods'):
-                print("🔬 STAGE 5: User-selected advanced methods")
-                
-                if "Signal Subspace Approach" in selected_methods['advanced_methods']:
-                    audio = self.signal_subspace_approach(audio)
-                
-                if "Noise Profile Analysis" in selected_methods['advanced_methods']:
-                    audio, noise_profile = self.noise_profile_analysis(audio)
-                    stats.update({'noise_profile': noise_profile})
-                
-                if "SNR Enhancement" in selected_methods['advanced_methods']:
-                    audio, snr_improvement = self.snr_enhancement(audio)
-                    stats['snr_improvement'] = snr_improvement
-                
-                if "Advanced VAD Enhancement" in selected_methods['advanced_methods']:
-                    audio, vad_stats = self.advanced_vad_enhancement(audio)
-                    stats.update(vad_stats)
-            
-            # Final normalization for ASR
-            audio = librosa.util.normalize(audio)
-            audio = np.clip(audio, -0.99, 0.99)
-            
-            # Final quality assessment
-            final_snr = self.measure_snr(audio)
-            stats['final_snr'] = final_snr
-            stats['total_snr_improvement'] = final_snr - initial_snr
-            stats['final_rms'] = np.sqrt(np.mean(audio**2))
-            
-            print(f"✅ USER-SELECTABLE enhancement completed")
-            print(f"📊 SNR improvement: {stats['total_snr_improvement']:.2f} dB")
-            print(f"📊 Final RMS level: {stats['final_rms']:.4f} (ASR-optimized)")
-            
-            return audio.astype(np.float32), stats
-            
-        except Exception as e:
-            print(f"❌ User-selectable enhancement failed: {e}")
-            return original_audio.astype(np.float32), {}
+            print(f"❌ GeeksforGeeks preprocessing failed: {e}")
+            # Fallback: return original audio
+            try:
+                audio, sr = librosa.load(audio_path, sr=self.sample_rate)
+                return audio.astype(np.float32), {'preprocessing_applied': False}
+            except:
+                return np.array([]), {'preprocessing_applied': False}
 
 class AudioHandler:
     """Audio handling for all Gradio input types"""
@@ -1347,22 +460,23 @@ class SmartTextChunker:
         
         return chunks
 
-class UserSelectableSpeechTranscriber:
-    """USER-SELECTABLE: Audio transcriber with checkbox-controlled preprocessing"""
+class AdaptiveSpeechTranscriber:
+    """Adaptive transcriber with GeeksforGeeks preprocessing and variable chunk sizing"""
     
     def __init__(self, model_path: str, use_quantization: bool = True):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
         self.model = None
         self.processor = None
-        self.audio_enhancer = UserSelectableSpeechEnhancer(SAMPLE_RATE)
+        self.audio_preprocessor = GeeksforGeeksAudioPreprocessor(SAMPLE_RATE)
         self.text_chunker = SmartTextChunker()
         self.chunk_count = 0
         self.temp_files = []
         
         print(f"🖥️ Using device: {self.device}")
-        print(f"🚀 USER-SELECTABLE speech enhancement enabled")
-        print(f"✅ All methods available as checkbox controls")
+        print(f"🚀 ADAPTIVE transcriber with GeeksforGeeks preprocessing initialized")
+        print(f"📏 Default chunk size: {DEFAULT_CHUNK_SECONDS}s")
+        print(f"📏 Fallback chunk sizes: {FALLBACK_CHUNK_SECONDS}")
         print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
         
         if not os.path.isdir(model_path):
@@ -1403,14 +517,15 @@ class UserSelectableSpeechTranscriber:
             
             loading_time = time.time() - start_time
             OptimizedMemoryManager.log_memory_status("After model loading", force_log=True)
-            print(f"✅ USER-SELECTABLE model loaded in {loading_time:.1f} seconds")
+            print(f"✅ ADAPTIVE model loaded in {loading_time:.1f} seconds")
             
         except Exception as e:
             print(f"❌ Model loading failed: {e}")
             raise
     
-    def create_speech_chunks(self, audio_array: np.ndarray) -> List[Tuple[np.ndarray, float, float]]:
-        chunk_samples = int(CHUNK_SECONDS * SAMPLE_RATE)
+    def create_adaptive_chunks(self, audio_array: np.ndarray, chunk_seconds: int) -> List[Tuple[np.ndarray, float, float]]:
+        """Create chunks with adaptive sizing"""
+        chunk_samples = int(chunk_seconds * SAMPLE_RATE)
         overlap_samples = int(OVERLAP_SECONDS * SAMPLE_RATE)
         stride = chunk_samples - overlap_samples
         
@@ -1438,7 +553,7 @@ class UserSelectableSpeechTranscriber:
                 print("⚠️ Reached chunk limit for processing speed")
                 break
         
-        print(f"✅ Created {len(chunks)} user-selectable processing chunks")
+        print(f"✅ Created {len(chunks)} adaptive chunks ({chunk_seconds}s each)")
         return chunks
     
     def transcribe_chunk_with_timeout(self, audio_chunk: np.ndarray, language: str = "auto") -> str:
@@ -1452,9 +567,6 @@ class UserSelectableSpeechTranscriber:
             if self.chunk_count % CHECK_MEMORY_FREQUENCY == 0:
                 if not OptimizedMemoryManager.quick_memory_check():
                     OptimizedMemoryManager.fast_cleanup()
-            
-            snr = self.audio_enhancer.measure_snr(audio_chunk)
-            print(f"🔍 Chunk SNR: {snr:.1f} dB")
             
             temp_audio_file = AudioHandler.numpy_to_temp_file(audio_chunk, SAMPLE_RATE)
             self.temp_files.append(temp_audio_file)
@@ -1543,11 +655,197 @@ class UserSelectableSpeechTranscriber:
             OptimizedMemoryManager.fast_cleanup()
             return "[CUDA_OUT_OF_MEMORY]"
         except Exception as e:
-            print(f"❌ User-selectable transcription error: {str(e)}")
+            print(f"❌ Adaptive transcription error: {str(e)}")
             return f"[ERROR: {str(e)[:30]}]"
         finally:
             if temp_audio_file:
                 AudioHandler.cleanup_temp_file(temp_audio_file)
+    
+    def transcribe_with_adaptive_chunks(self, audio_array: np.ndarray, language: str = "auto") -> Tuple[str, Dict]:
+        """Transcribe with adaptive chunk sizing and fallback mechanism"""
+        chunk_sizes = [DEFAULT_CHUNK_SECONDS] + FALLBACK_CHUNK_SECONDS
+        
+        for attempt, chunk_seconds in enumerate(chunk_sizes):
+            print(f"🎯 Attempt {attempt + 1}: Trying {chunk_seconds}s chunks...")
+            
+            chunks = self.create_adaptive_chunks(audio_array, chunk_seconds)
+            transcriptions = []
+            successful = 0
+            failed = 0
+            timeout_count = 0
+            
+            for i, (chunk, start_time_chunk, end_time_chunk) in enumerate(chunks):
+                print(f"🚀 Processing chunk {i+1}/{len(chunks)} ({start_time_chunk:.1f}s-{end_time_chunk:.1f}s)")
+                
+                try:
+                    transcription = self.transcribe_chunk_with_timeout(chunk, language)
+                    transcriptions.append(transcription)
+                    
+                    if transcription == "Input Audio Very noisy. Unable to extract details.":
+                        timeout_count += 1
+                        print(f"⏱️ Chunk {i+1}: Timeout due to noisy audio")
+                    elif transcription.startswith('[') and transcription.endswith(']'):
+                        failed += 1
+                        print(f"❌ Chunk {i+1}: Failed - {transcription}")
+                    else:
+                        successful += 1
+                        print(f"✅ Chunk {i+1}: Success - {transcription[:50]}...")
+                
+                except Exception as e:
+                    print(f"❌ Chunk {i+1} processing error: {e}")
+                    transcriptions.append(f"[CHUNK_{i+1}_ERROR]")
+                    failed += 1
+                
+                if i % CHECK_MEMORY_FREQUENCY == 0:
+                    OptimizedMemoryManager.fast_cleanup()
+            
+            # Calculate success rate
+            total_chunks = len(chunks)
+            success_rate = successful / total_chunks if total_chunks > 0 else 0
+            
+            print(f"📊 Chunk size {chunk_seconds}s results: {successful}/{total_chunks} successful ({success_rate*100:.1f}%)")
+            
+            # If success rate is acceptable, use this result
+            if success_rate >= 0.7 or successful > 0:  # At least 70% success or some success
+                final_transcription = self.merge_transcriptions_with_info(
+                    transcriptions, timeout_count, chunk_seconds
+                )
+                
+                stats = {
+                    'chunk_seconds_used': chunk_seconds,
+                    'total_chunks': total_chunks,
+                    'successful_chunks': successful,
+                    'failed_chunks': failed,
+                    'timeout_chunks': timeout_count,
+                    'success_rate': success_rate,
+                    'attempts_made': attempt + 1
+                }
+                
+                return final_transcription, stats
+            
+            print(f"⚠️ Chunk size {chunk_seconds}s had low success rate ({success_rate*100:.1f}%), trying next size...")
+        
+        # If all chunk sizes failed
+        return f"❌ Failed to transcribe with all chunk sizes: {chunk_sizes}", {
+            'chunk_seconds_used': 'all_failed',
+            'attempts_made': len(chunk_sizes),
+            'success_rate': 0
+        }
+    
+    def merge_transcriptions_with_info(self, transcriptions: List[str], timeout_count: int, chunk_seconds: int) -> str:
+        if not transcriptions:
+            return "No transcriptions generated"
+        
+        valid_transcriptions = []
+        error_count = 0
+        noisy_timeout_count = 0
+        
+        for i, text in enumerate(transcriptions):
+            if text == "Input Audio Very noisy. Unable to extract details.":
+                noisy_timeout_count += 1
+            elif text.startswith('[') and text.endswith(']'):
+                error_count += 1
+            else:
+                cleaned_text = text.strip()
+                if cleaned_text and len(cleaned_text) > 1:
+                    valid_transcriptions.append(cleaned_text)
+        
+        if not valid_transcriptions:
+            if noisy_timeout_count > 0:
+                return f"❌ All {len(transcriptions)} chunks timed out due to very noisy audio. Chunk size: {chunk_seconds}s"
+            else:
+                return f"❌ No valid transcriptions from {len(transcriptions)} chunks. Chunk size: {chunk_seconds}s"
+        
+        merged_text = " ".join(valid_transcriptions)
+        
+        total_chunks = len(transcriptions)
+        success_rate = (len(valid_transcriptions) / total_chunks) * 100
+        
+        summary_parts = []
+        if len(valid_transcriptions) > 0:
+            summary_parts.append(f"{len(valid_transcriptions)} chunks successful")
+        if error_count > 0:
+            summary_parts.append(f"{error_count} chunks had errors")
+        if noisy_timeout_count > 0:
+            summary_parts.append(f"{noisy_timeout_count} chunks too noisy (timed out)")
+        
+        if error_count > 0 or noisy_timeout_count > 0:
+            merged_text += f"\n\n[Adaptive Processing Summary: {', '.join(summary_parts)} - {success_rate:.1f}% success rate with {chunk_seconds}s chunks]"
+            
+            if noisy_timeout_count > 0:
+                merged_text += f"\n[Note: {noisy_timeout_count} chunks were too noisy and timed out after {CHUNK_TIMEOUT} seconds each]"
+        
+        return merged_text.strip()
+    
+    def transcribe_with_geeksforgeeks_preprocessing(self, audio_path: str, enable_preprocessing: bool, 
+                                                  language: str = "auto") -> Tuple[str, str, str, Dict]:
+        try:
+            print(f"🚀 Starting ADAPTIVE transcription with GeeksforGeeks preprocessing...")
+            print(f"🔧 Preprocessing enabled: {enable_preprocessing}")
+            print(f"🌍 Language: {language}")
+            print(f"📏 Adaptive chunk sizing enabled")
+            
+            OptimizedMemoryManager.log_memory_status("Initial", force_log=True)
+            
+            try:
+                audio_info = sf.info(audio_path)
+                duration_seconds = audio_info.frames / audio_info.samplerate
+                print(f"⏱️ Audio duration: {duration_seconds:.2f} seconds")
+                
+                max_duration = 900
+                if duration_seconds > max_duration:
+                    print(f"⚠️ Processing first {max_duration/60:.1f} minutes")
+                    audio_array, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True, duration=max_duration)
+                else:
+                    audio_array, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
+                    
+            except Exception as e:
+                print(f"❌ Audio loading failed: {e}")
+                return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
+            
+            # Apply GeeksforGeeks preprocessing if enabled
+            if enable_preprocessing:
+                enhanced_audio, preprocessing_stats = self.audio_preprocessor.apply_geeksforgeeks_preprocessing(audio_path)
+            else:
+                print("⚠️ Preprocessing DISABLED - using raw audio")
+                enhanced_audio = audio_array
+                preprocessing_stats = {'preprocessing_applied': False}
+            
+            enhanced_path = tempfile.mktemp(suffix="_geeksforgeeks_enhanced.wav")
+            original_path = tempfile.mktemp(suffix="_original.wav")
+            
+            sf.write(enhanced_path, enhanced_audio, SAMPLE_RATE)
+            sf.write(original_path, audio_array, SAMPLE_RATE)
+            
+            print("✂️ Starting adaptive chunk transcription...")
+            start_time = time.time()
+            
+            # Transcribe with adaptive chunk sizing
+            final_transcription, transcription_stats = self.transcribe_with_adaptive_chunks(enhanced_audio, language)
+            
+            processing_time = time.time() - start_time
+            
+            # Combine stats
+            combined_stats = {**preprocessing_stats, **transcription_stats}
+            combined_stats['processing_time'] = processing_time
+            
+            print(f"✅ ADAPTIVE transcription completed in {processing_time:.2f}s")
+            if 'chunk_seconds_used' in transcription_stats:
+                print(f"📏 Optimal chunk size: {transcription_stats['chunk_seconds_used']}s")
+            if 'success_rate' in transcription_stats:
+                print(f"📊 Success rate: {transcription_stats['success_rate']*100:.1f}%")
+            
+            return final_transcription, original_path, enhanced_path, combined_stats
+                
+        except Exception as e:
+            error_msg = f"❌ Adaptive transcription failed: {e}"
+            print(error_msg)
+            OptimizedMemoryManager.fast_cleanup()
+            return error_msg, audio_path, audio_path, {}
+        finally:
+            for temp_file in self.temp_files:
+                AudioHandler.cleanup_temp_file(temp_file)
+            self.temp_files.clear()
     
     def translate_text_chunks(self, text: str) -> str:
         if self.model is None or self.processor is None:
@@ -1557,7 +855,7 @@ class UserSelectableSpeechTranscriber:
             return "[NO_TRANSLATION_NEEDED]"
         
         try:
-            print("🌐 Starting user-selectable text translation...")
+            print("🌐 Starting adaptive text translation...")
             
             english_indicators = [
                 "the", "and", "is", "in", "to", "of", "a", "that", "it", "with", "for", "as", "was", "on", "are", "you",
@@ -1601,7 +899,7 @@ class UserSelectableSpeechTranscriber:
             return merged_translation
             
         except Exception as e:
-            print(f"❌ User-selectable translation error: {str(e)}")
+            print(f"❌ Adaptive translation error: {str(e)}")
             OptimizedMemoryManager.fast_cleanup()
             return f"[TRANSLATION_ERROR: {str(e)[:50]}]"
     
@@ -1682,148 +980,6 @@ class UserSelectableSpeechTranscriber:
         
         return merged_text.strip()
     
-    def transcribe_with_user_selected_enhancement(self, audio_path: str, selected_methods: Dict, language: str = "auto", 
-                                                enhancement_level: str = "moderate") -> Tuple[str, str, str, Dict]:
-        try:
-            print(f"🚀 Starting USER-SELECTABLE transcription with selected preprocessing methods...")
-            print(f"🔧 Enhancement level: {enhancement_level}")
-            print(f"🌍 Language: {language}")
-            print(f"✅ Selected methods: {len([item for sublist in selected_methods.values() for item in sublist])} total")
-            print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
-            
-            OptimizedMemoryManager.log_memory_status("Initial", force_log=True)
-            
-            try:
-                audio_info = sf.info(audio_path)
-                duration_seconds = audio_info.frames / audio_info.samplerate
-                print(f"⏱️ Audio duration: {duration_seconds:.2f} seconds")
-                
-                max_duration = 900
-                if duration_seconds > max_duration:
-                    print(f"⚠️ Processing first {max_duration/60:.1f} minutes")
-                    audio_array, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True, duration=max_duration)
-                else:
-                    audio_array, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
-                    
-            except Exception as e:
-                print(f"❌ Audio loading failed: {e}")
-                return f"❌ Audio loading failed: {e}", audio_path, audio_path, {}
-            
-            # USER-SELECTABLE: Apply only selected methods
-            enhanced_audio, stats = self.audio_enhancer.user_selectable_enhancement(
-                audio_array, selected_methods, enhancement_level
-            )
-            
-            enhanced_path = tempfile.mktemp(suffix="_user_selected_enhanced.wav")
-            original_path = tempfile.mktemp(suffix="_original.wav")
-            
-            sf.write(enhanced_path, enhanced_audio, SAMPLE_RATE)
-            sf.write(original_path, audio_array, SAMPLE_RATE)
-            
-            print("✂️ Creating user-selectable processing chunks...")
-            chunks = self.create_speech_chunks(enhanced_audio)
-            
-            if not chunks:
-                return "❌ No valid chunks created", original_path, enhanced_path, stats
-            
-            transcriptions = []
-            successful = 0
-            timeout_count = 0
-            
-            start_time = time.time()
-            
-            for i, (chunk, start_time_chunk, end_time_chunk) in enumerate(chunks):
-                print(f"🚀 Processing user-selected chunk {i+1}/{len(chunks)} ({start_time_chunk:.1f}s-{end_time_chunk:.1f}s)")
-                
-                try:
-                    transcription = self.transcribe_chunk_with_timeout(chunk, language)
-                    transcriptions.append(transcription)
-                    
-                    if transcription == "Input Audio Very noisy. Unable to extract details.":
-                        timeout_count += 1
-                        print(f"⏱️ Chunk {i+1}: Timeout due to noisy audio")
-                    elif not transcription.startswith('['):
-                        successful += 1
-                        print(f"✅ Chunk {i+1}: {transcription[:50]}...")
-                    else:
-                        print(f"⚠️ Chunk {i+1}: {transcription}")
-                
-                except Exception as e:
-                    print(f"❌ Chunk {i+1} failed: {e}")
-                    transcriptions.append(f"[CHUNK_{i+1}_ERROR]")
-                
-                if i % CHECK_MEMORY_FREQUENCY == 0:
-                    OptimizedMemoryManager.fast_cleanup()
-            
-            processing_time = time.time() - start_time
-            
-            print("🔗 Merging user-selected transcriptions...")
-            final_transcription = self.merge_transcriptions_with_timeout_info(
-                transcriptions, timeout_count
-            )
-            
-            print(f"✅ USER-SELECTABLE transcription completed in {processing_time:.2f}s")
-            print(f"📊 Success rate: {successful}/{len(chunks)} ({successful/len(chunks)*100:.1f}%)")
-            if timeout_count > 0:
-                print(f"⏱️ Timeout chunks: {timeout_count}/{len(chunks)} (very noisy audio)")
-            
-            return final_transcription, original_path, enhanced_path, stats
-                
-        except Exception as e:
-            error_msg = f"❌ User-selectable transcription failed: {e}"
-            print(error_msg)
-            OptimizedMemoryManager.fast_cleanup()
-            return error_msg, audio_path, audio_path, {}
-        finally:
-            for temp_file in self.temp_files:
-                AudioHandler.cleanup_temp_file(temp_file)
-            self.temp_files.clear()
-    
-    def merge_transcriptions_with_timeout_info(self, transcriptions: List[str], timeout_count: int) -> str:
-        if not transcriptions:
-            return "No transcriptions generated"
-        
-        valid_transcriptions = []
-        error_count = 0
-        noisy_timeout_count = 0
-        
-        for i, text in enumerate(transcriptions):
-            if text == "Input Audio Very noisy. Unable to extract details.":
-                noisy_timeout_count += 1
-            elif text.startswith('[') and text.endswith(']'):
-                error_count += 1
-            else:
-                cleaned_text = text.strip()
-                if cleaned_text and len(cleaned_text) > 1:
-                    valid_transcriptions.append(cleaned_text)
-        
-        if not valid_transcriptions:
-            if noisy_timeout_count > 0:
-                return f"❌ All {len(transcriptions)} chunks timed out due to very noisy audio. Unable to extract any details from this audio."
-            else:
-                return f"❌ No valid transcriptions from {len(transcriptions)} chunks."
-        
-        merged_text = " ".join(valid_transcriptions)
-        
-        total_chunks = len(transcriptions)
-        success_rate = (len(valid_transcriptions) / total_chunks) * 100
-        
-        summary_parts = []
-        if len(valid_transcriptions) > 0:
-            summary_parts.append(f"{len(valid_transcriptions)} chunks successful")
-        if error_count > 0:
-            summary_parts.append(f"{error_count} chunks had errors")
-        if noisy_timeout_count > 0:
-            summary_parts.append(f"{noisy_timeout_count} chunks too noisy (timed out)")
-        
-        if error_count > 0 or noisy_timeout_count > 0:
-            merged_text += f"\n\n[User-Selected Processing Summary: {', '.join(summary_parts)} - {success_rate:.1f}% success rate]"
-            
-            if noisy_timeout_count > 0:
-                merged_text += f"\n[Note: {noisy_timeout_count} chunks were too noisy and timed out after {CHUNK_TIMEOUT} seconds each]"
-        
-        return merged_text.strip()
-    
     def __del__(self):
         for temp_file in self.temp_files:
             AudioHandler.cleanup_temp_file(temp_file)
@@ -1842,7 +998,7 @@ class SafeLogCapture:
         if text.strip():
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             
-            if "🚀" in text or "USER-SELECTABLE" in text:
+            if "🚀" in text or "ADAPTIVE" in text or "GEEKSFORGEEKS" in text:
                 emoji = "🚀"
             elif "⏱️" in text or "timeout" in text.lower() or "noisy" in text.lower():
                 emoji = "⏱️"
@@ -1874,9 +1030,9 @@ class SafeLogCapture:
     
     def get_logs(self):
         with self.lock:
-            return "\n".join(self.log_buffer[-50:]) if self.log_buffer else "🚀 User-selectable system ready..."
+            return "\n".join(self.log_buffer[-50:]) if self.log_buffer else "🚀 Adaptive system ready..."
 
-def setup_user_selectable_logging():
+def setup_adaptive_logging():
     logging.basicConfig(
         level=logging.ERROR,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -1892,37 +1048,34 @@ def get_current_logs():
     global log_capture
     if log_capture:
         return log_capture.get_logs()
-    return "🚀 User-selectable system initializing..."
+    return "🚀 Adaptive system initializing..."
 
-def initialize_user_selectable_transcriber():
+def initialize_adaptive_transcriber():
     global transcriber
     if transcriber is None:
         try:
-            print("🚀 Initializing USER-SELECTABLE Speech Enhancement & Transcription System...")
-            print("✅ ALL PREPROCESSING METHODS AVAILABLE AS CHECKBOX CONTROLS:")
-            print("🔬 Spectral Domain: 6 methods (Spectral Subtraction, MBSS, Wiener, MMSE-STSA, MMSE-LSA, OM-LSA)")
-            print("🎵 Frequency Domain: 2 methods (Comprehensive Filtering, Adaptive Filtering)")
-            print("🔬 Time-Frequency: 3 methods (DA-STFT, TF Masking, Frame-Based)")
-            print("📊 Preprocessing: 5 methods (Z-score, Compression, Gating, Smoothing, Averaging)")
-            print("🔬 Advanced: 4 methods (Signal Subspace, Noise Profile, SNR Enhancement, VAD)")
+            print("🚀 Initializing ADAPTIVE Speech Transcription with GeeksforGeeks Preprocessing...")
+            print("✅ ADAPTIVE FEATURES ENABLED:")
+            print("🔧 GeeksforGeeks Preprocessing: Resampling, Butterworth Filtering, Normalization")
+            print("📏 Adaptive Chunk Sizing: 30s default, fallbacks: 10s, 15s, 20s, 40s")
+            print("⚡ Enable/Disable Preprocessing Toggle")
+            print("🔄 Automatic Fallback Mechanism")
             print(f"⏱️ Chunk timeout: {CHUNK_TIMEOUT} seconds")
             
-            transcriber = UserSelectableSpeechTranscriber(model_path=MODEL_PATH, use_quantization=True)
-            return "✅ USER-SELECTABLE transcription system ready! All methods available as checkboxes."
+            transcriber = AdaptiveSpeechTranscriber(model_path=MODEL_PATH, use_quantization=True)
+            return "✅ ADAPTIVE transcription system ready! GeeksforGeeks preprocessing enabled."
         except Exception as e:
             try:
                 print("🔄 Retrying without quantization...")
-                transcriber = UserSelectableSpeechTranscriber(model_path=MODEL_PATH, use_quantization=False)
-                return "✅ USER-SELECTABLE system loaded (standard precision)!"
+                transcriber = AdaptiveSpeechTranscriber(model_path=MODEL_PATH, use_quantization=False)
+                return "✅ ADAPTIVE system loaded (standard precision)!"
             except Exception as e2:
-                error_msg = f"❌ User-selectable system failure: {str(e2)}"
+                error_msg = f"❌ Adaptive system failure: {str(e2)}"
                 print(error_msg)
                 return error_msg
-    return "✅ USER-SELECTABLE system already active!"
+    return "✅ ADAPTIVE system already active!"
 
-def transcribe_audio_user_selectable(audio_input, language_choice, enhancement_level, 
-                                   spectral_methods, frequency_methods, time_frequency_methods, 
-                                   preprocessing_methods, advanced_methods, progress=gr.Progress()):
+def transcribe_audio_adaptive(audio_input, language_choice, enable_preprocessing, progress=gr.Progress()):
     global transcriber
     
     if audio_input is None:
@@ -1931,63 +1084,52 @@ def transcribe_audio_user_selectable(audio_input, language_choice, enhancement_l
     if transcriber is None:
         return "❌ System not initialized. Please wait for startup.", None, None, "", ""
     
-    # Organize selected methods
-    selected_methods = {
-        'spectral_methods': spectral_methods or [],
-        'frequency_methods': frequency_methods or [],
-        'time_frequency_methods': time_frequency_methods or [],
-        'preprocessing_methods': preprocessing_methods or [],
-        'advanced_methods': advanced_methods or []
-    }
-    
-    total_selected = sum(len(methods) for methods in selected_methods.values())
-    
-    if total_selected == 0:
-        return "❌ Please select at least one preprocessing method.", None, None, "", ""
-    
     start_time = time.time()
-    print(f"🚀 Starting USER-SELECTABLE transcription with {total_selected} selected methods...")
+    print(f"🚀 Starting ADAPTIVE transcription with GeeksforGeeks preprocessing...")
     print(f"🌍 Language: {language_choice}")
-    print(f"🔧 Enhancement: {enhancement_level}")
-    print(f"⏱️ Timeout per chunk: {CHUNK_TIMEOUT} seconds")
+    print(f"🔧 Preprocessing enabled: {enable_preprocessing}")
+    print(f"📏 Adaptive chunk sizing: {DEFAULT_CHUNK_SECONDS}s → {FALLBACK_CHUNK_SECONDS}")
     
-    progress(0.1, desc="Initializing USER-SELECTABLE processing...")
+    progress(0.1, desc="Initializing ADAPTIVE processing...")
     
     temp_audio_path = None
     
     try:
         temp_audio_path = AudioHandler.convert_to_file(audio_input, SAMPLE_RATE)
         
-        progress(0.3, desc="Applying USER-SELECTED speech enhancement methods...")
+        if enable_preprocessing:
+            progress(0.3, desc="Applying GeeksforGeeks preprocessing...")
+        else:
+            progress(0.3, desc="Skipping preprocessing (disabled by user)...")
         
         language_code = SUPPORTED_LANGUAGES.get(language_choice, "auto")
         
-        progress(0.5, desc="USER-SELECTABLE transcription with timeout protection...")
+        progress(0.5, desc="ADAPTIVE transcription with variable chunk sizing...")
         
-        transcription, original_path, enhanced_path, enhancement_stats = transcriber.transcribe_with_user_selected_enhancement(
-            temp_audio_path, selected_methods, language_code, enhancement_level
+        transcription, original_path, enhanced_path, stats = transcriber.transcribe_with_geeksforgeeks_preprocessing(
+            temp_audio_path, enable_preprocessing, language_code
         )
         
-        progress(0.9, desc="Generating USER-SELECTABLE reports...")
+        progress(0.9, desc="Generating ADAPTIVE reports...")
         
-        enhancement_report = create_user_selectable_enhancement_report(enhancement_stats, enhancement_level, selected_methods)
+        enhancement_report = create_adaptive_enhancement_report(stats, enable_preprocessing)
         
         processing_time = time.time() - start_time
-        processing_report = create_user_selectable_processing_report(
-            temp_audio_path, language_choice, enhancement_level, 
+        processing_report = create_adaptive_processing_report(
+            temp_audio_path, language_choice, enable_preprocessing, 
             processing_time, len(transcription.split()) if isinstance(transcription, str) else 0,
-            enhancement_stats, selected_methods
+            stats
         )
         
-        progress(1.0, desc="USER-SELECTABLE processing complete!")
+        progress(1.0, desc="ADAPTIVE processing complete!")
         
-        print(f"✅ USER-SELECTABLE transcription completed in {processing_time:.2f}s")
+        print(f"✅ ADAPTIVE transcription completed in {processing_time:.2f}s")
         print(f"📊 Output: {len(transcription.split()) if isinstance(transcription, str) else 0} words")
         
         return transcription, original_path, enhanced_path, enhancement_report, processing_report
         
     except Exception as e:
-        error_msg = f"❌ User-selectable system error: {str(e)}"
+        error_msg = f"❌ Adaptive system error: {str(e)}"
         print(error_msg)
         OptimizedMemoryManager.fast_cleanup()
         return error_msg, None, None, "", ""
@@ -1995,7 +1137,7 @@ def transcribe_audio_user_selectable(audio_input, language_choice, enhancement_l
         if temp_audio_path:
             AudioHandler.cleanup_temp_file(temp_audio_path)
 
-def translate_transcription_user_selectable(transcription_text, progress=gr.Progress()):
+def translate_transcription_adaptive(transcription_text, progress=gr.Progress()):
     global transcriber
     
     if not transcription_text or transcription_text.strip() == "":
@@ -2007,12 +1149,12 @@ def translate_transcription_user_selectable(transcription_text, progress=gr.Prog
     if transcription_text.startswith("❌") or transcription_text.startswith("["):
         return "❌ Cannot translate error messages or system messages. Please provide valid transcription text."
     
-    progress(0.1, desc="Preparing text for user-selectable translation...")
+    progress(0.1, desc="Preparing text for adaptive translation...")
     
     try:
         text_to_translate = transcription_text
-        if "\n\n[User-Selected Processing Summary:" in text_to_translate:
-            text_to_translate = text_to_translate.split("\n\n[User-Selected Processing Summary:")[0].strip()
+        if "\n\n[Adaptive Processing Summary:" in text_to_translate:
+            text_to_translate = text_to_translate.split("\n\n[Adaptive Processing Summary:")[0].strip()
         
         progress(0.3, desc="Creating smart text chunks...")
         
@@ -2020,131 +1162,91 @@ def translate_transcription_user_selectable(transcription_text, progress=gr.Prog
         translated_text = transcriber.translate_text_chunks(text_to_translate)
         translation_time = time.time() - start_time
         
-        progress(0.9, desc="Finalizing user-selectable translation...")
+        progress(0.9, desc="Finalizing adaptive translation...")
         
         if not translated_text.startswith('['):
-            translated_text += f"\n\n[User-Selectable Translation completed in {translation_time:.2f}s using smart chunking]"
+            translated_text += f"\n\n[Adaptive Translation completed in {translation_time:.2f}s using smart chunking]"
         
-        progress(1.0, desc="User-selectable translation complete!")
+        progress(1.0, desc="Adaptive translation complete!")
         
-        print(f"✅ User-selectable translation completed in {translation_time:.2f}s")
+        print(f"✅ Adaptive translation completed in {translation_time:.2f}s")
         
         return translated_text
         
     except Exception as e:
-        error_msg = f"❌ User-selectable translation failed: {str(e)}"
+        error_msg = f"❌ Adaptive translation failed: {str(e)}"
         print(error_msg)
         OptimizedMemoryManager.fast_cleanup()
         return error_msg
 
-def create_user_selectable_enhancement_report(stats: Dict, level: str, selected_methods: Dict) -> str:
+def create_adaptive_enhancement_report(stats: Dict, enable_preprocessing: bool) -> str:
     if not stats:
         return "⚠️ Enhancement statistics not available"
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Count selected methods
-    method_counts = {key: len(methods) for key, methods in selected_methods.items()}
-    total_methods = sum(method_counts.values())
-    
     report = f"""
-🚀 USER-SELECTABLE SPEECH ENHANCEMENT REPORT
-===========================================
+🚀 ADAPTIVE SPEECH ENHANCEMENT REPORT
+=====================================
 Timestamp: {timestamp}
-Enhancement Level: {level.upper()}
-Total Selected Methods: {total_methods}
+Preprocessing Enabled: {'✅ YES' if enable_preprocessing else '❌ NO'}
 
-📊 USER-SELECTED QUALITY ANALYSIS:
-• Initial SNR: {stats.get('initial_snr', 0):.2f} dB
-• Final SNR: {stats.get('final_snr', 0):.2f} dB
-• Total SNR Improvement: {stats.get('total_snr_improvement', 0):.2f} dB
+📊 GEEKSFORGEEKS PREPROCESSING STATUS:
+"""
+    
+    if enable_preprocessing and stats.get('preprocessing_applied', False):
+        report += f"""• Audio Duration: {stats.get('original_length', 0):.2f} seconds
+• Sample Rate: {stats.get('sample_rate', SAMPLE_RATE)} Hz
+• Final RMS Level: {stats.get('final_rms', 0):.4f} (ASR-optimized)
+• Preprocessing Applied: ✅ GEEKSFORGEEKS PIPELINE
+
+🔧 GEEKSFORGEEKS PIPELINE STAGES:
+• Stage 1: ✅ Audio Resampling (16000 Hz)
+• Stage 2: ✅ Butterworth Low-pass Filter ({GEEKSFORGEEKS_CUTOFF_FREQ} Hz cutoff, Order {GEEKSFORGEEKS_FILTER_ORDER})
+• Stage 3: ✅ Amplitude Normalization (0.95 max)
+• Stage 4: ✅ Quality Control Clipping (-0.99 to 0.99)
+"""
+    else:
+        report += f"""• Preprocessing: ❌ DISABLED BY USER
+• Raw Audio Used: ✅ NO PREPROCESSING APPLIED
 • Audio Duration: {stats.get('original_length', 0):.2f} seconds
-• Final RMS Energy: {stats.get('final_rms', 0):.4f}
-
-🚀 USER-SELECTED METHODS BY CATEGORY:
-
-🔬 SPECTRAL DOMAIN METHODS ({method_counts['spectral_methods']} selected):
 """
     
-    spectral_available = [
-        "Spectral Subtraction", "Multi-Band Spectral Subtraction", "Wiener Filtering",
-        "MMSE-STSA Estimator", "MMSE-LSA Estimator", "OM-LSA Estimator"
-    ]
-    
-    for method in spectral_available:
-        status = "✅ APPLIED" if method in selected_methods.get('spectral_methods', []) else "❌ NOT SELECTED"
-        report += f"• {method}: {status}\n"
-    
     report += f"""
-🎵 FREQUENCY DOMAIN METHODS ({method_counts['frequency_methods']} selected):
-"""
-    
-    frequency_available = ["Comprehensive Frequency Filtering", "Adaptive Filtering"]
-    
-    for method in frequency_available:
-        status = "✅ APPLIED" if method in selected_methods.get('frequency_methods', []) else "❌ NOT SELECTED"
-        report += f"• {method}: {status}\n"
-    
-    report += f"""
-🔬 TIME-FREQUENCY DOMAIN METHODS ({method_counts['time_frequency_methods']} selected):
-"""
-    
-    time_freq_available = ["DA-STFT Processing", "Time-Frequency Masking", "Frame-Based Processing"]
-    
-    for method in time_freq_available:
-        status = "✅ APPLIED" if method in selected_methods.get('time_frequency_methods', []) else "❌ NOT SELECTED"
-        report += f"• {method}: {status}\n"
-    
-    report += f"""
-📊 PREPROCESSING & NORMALIZATION ({method_counts['preprocessing_methods']} selected):
-"""
-    
-    preprocessing_available = [
-        "Z-score Min-Max Normalization", "Dynamic Range Compression", "Noise Gating",
-        "Temporal Smoothing", "Frame Averaging"
-    ]
-    
-    for method in preprocessing_available:
-        status = "✅ APPLIED" if method in selected_methods.get('preprocessing_methods', []) else "❌ NOT SELECTED"
-        report += f"• {method}: {status}\n"
-    
-    report += f"""
-🔬 ADVANCED METHODS ({method_counts['advanced_methods']} selected):
-"""
-    
-    advanced_available = [
-        "Signal Subspace Approach", "Noise Profile Analysis", "SNR Enhancement", "Advanced VAD Enhancement"
-    ]
-    
-    for method in advanced_available:
-        status = "✅ APPLIED" if method in selected_methods.get('advanced_methods', []) else "❌ NOT SELECTED"
-        report += f"• {method}: {status}\n"
-    
-    report += f"""
-🎤 VOICE ACTIVITY ANALYSIS:
-• Voice Percentage: {stats.get('voice_percentage', 0):.1f}%
-• Voice Score: {stats.get('voice_score', 0):.3f}
-• SNR Estimate: {stats.get('snr_estimate', 0):.2f} dB
+📏 ADAPTIVE CHUNK SIZING RESULTS:
+• Chunk Size Used: {stats.get('chunk_seconds_used', 'N/A')}s
+• Total Chunks: {stats.get('total_chunks', 0)}
+• Successful Chunks: {stats.get('successful_chunks', 0)}
+• Failed Chunks: {stats.get('failed_chunks', 0)}
+• Timeout Chunks: {stats.get('timeout_chunks', 0)}
+• Success Rate: {stats.get('success_rate', 0)*100:.1f}%
+• Attempts Made: {stats.get('attempts_made', 0)}
 
 ⏱️ TIMEOUT PROTECTION:
-• Chunk Timeout: {CHUNK_TIMEOUT} seconds
-• User-Selected Noise Detection: ✅ ACTIVE
+• Chunk Timeout: {CHUNK_TIMEOUT} seconds per chunk
+• Adaptive Quality Detection: ✅ ACTIVE
 • Timeout Messages: ✅ ENABLED
 
-🏆 USER-SELECTABLE ENHANCEMENT SCORE: {min(100, total_methods * 5)}/100
+🚀 ADAPTIVE FEATURES:
+• Default Chunk Size: {DEFAULT_CHUNK_SECONDS} seconds
+• Fallback Chunk Sizes: {', '.join(map(str, FALLBACK_CHUNK_SECONDS))} seconds
+• Automatic Fallback: ✅ ENABLED
+• Preprocessing Toggle: ✅ USER CONTROLLED
+
+🏆 ADAPTIVE ENHANCEMENT SCORE: {min(100, stats.get('success_rate', 0)*100):.0f}/100
 
 🔧 TECHNICAL SPECIFICATIONS:
-• Processing Method: USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
-• Selected Methods: {total_methods} out of 20 available techniques
-• ASR Optimization: Final normalization applied
-• Quality Detection: Multi-feature analysis
+• Processing Method: ADAPTIVE CHUNK SIZING WITH GEEKSFORGEEKS PREPROCESSING
+• Enhancement Control: USER TOGGLE (Enable/Disable)
+• Fallback Mechanism: AUTOMATIC CHUNK SIZE ADAPTATION
+• Quality Detection: SUCCESS RATE BASED ADAPTATION
 • Memory Management: GPU-optimized with cleanup
-• Error Recovery: Comprehensive fallback systems
+• Error Recovery: COMPREHENSIVE FALLBACK SYSTEMS
 """
     return report
 
-def create_user_selectable_processing_report(audio_path: str, language: str, enhancement: str, 
-                                           processing_time: float, word_count: int, stats: Dict, selected_methods: Dict) -> str:
+def create_adaptive_processing_report(audio_path: str, language: str, enable_preprocessing: bool, 
+                                    processing_time: float, word_count: int, stats: Dict) -> str:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
@@ -2155,27 +1257,20 @@ def create_user_selectable_processing_report(audio_path: str, language: str, enh
     
     device_info = f"GPU: {torch.cuda.get_device_name()}" if torch.cuda.is_available() else "CPU Processing"
     
-    initial_snr = stats.get('initial_snr', 0)
-    final_snr = stats.get('final_snr', 0)
-    snr_improvement = stats.get('total_snr_improvement', 0)
-    voice_percentage = stats.get('voice_percentage', 0)
-    final_rms = stats.get('final_rms', 0)
-    
-    # Count selected methods
-    method_counts = {key: len(methods) for key, methods in selected_methods.items()}
-    total_methods = sum(method_counts.values())
+    chunk_seconds = stats.get('chunk_seconds_used', 'N/A')
+    success_rate = stats.get('success_rate', 0) * 100
+    attempts = stats.get('attempts_made', 0)
     
     report = f"""
-🚀 USER-SELECTABLE SPEECH TRANSCRIPTION REPORT
-=============================================
+🚀 ADAPTIVE SPEECH TRANSCRIPTION REPORT
+=======================================
 Generated: {timestamp}
 
-🎵 USER-SELECTABLE AUDIO PROCESSING:
+🎵 ADAPTIVE AUDIO PROCESSING:
 • Source File: {os.path.basename(audio_path)}
 • {audio_info}
 • Target Language: {language}
-• Enhancement Level: {enhancement.upper()}
-• Total Selected Methods: {total_methods} out of 20 available
+• Preprocessing Enabled: {'✅ YES' if enable_preprocessing else '❌ NO'}
 
 ⚡ PERFORMANCE METRICS:
 • Processing Time: {processing_time:.2f} seconds
@@ -2183,66 +1278,80 @@ Generated: {timestamp}
 • Processing Speed: {word_count/processing_time:.1f} words/second
 • Processing Device: {device_info}
 
-🚀 USER-SELECTABLE CONFIGURATION:
-• Model: Gemma 3N E4B-IT (User-Selectable Enhanced)
-• Chunk Size: {CHUNK_SECONDS} seconds (User-Selectable Optimized)
+🚀 ADAPTIVE CONFIGURATION:
+• Model: Gemma 3N E4B-IT (Adaptive Enhanced)
+• Default Chunk Size: {DEFAULT_CHUNK_SECONDS} seconds
+• Fallback Chunk Sizes: {', '.join(map(str, FALLBACK_CHUNK_SECONDS))} seconds
 • Chunk Timeout: {CHUNK_TIMEOUT} seconds per chunk
 • Overlap: {OVERLAP_SECONDS} seconds (Context Preserving)
-• Enhancement Method: USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
+• Enhancement Method: ADAPTIVE CHUNK SIZING WITH GEEKSFORGEEKS PREPROCESSING
 
-📊 USER-SELECTED QUALITY TRANSFORMATION:
-• Initial SNR: {initial_snr:.2f} dB → {final_snr:.2f} dB
-• Total SNR Improvement: {snr_improvement:.2f} dB
-• Voice Activity: {voice_percentage:.1f}% of audio
-• Final RMS Level: {final_rms:.4f} (ASR-Optimized)
-• Enhancement Rating: {'EXCEPTIONAL' if snr_improvement > 10 else 'EXCELLENT' if snr_improvement > 5 else 'VERY GOOD' if snr_improvement > 2 else 'GOOD' if snr_improvement > 0 else 'MAINTAINED'}
+📏 ADAPTIVE CHUNK SIZING RESULTS:
+• Optimal Chunk Size Found: {chunk_seconds}s
+• Success Rate Achieved: {success_rate:.1f}%
+• Total Attempts Made: {attempts}
+• Successful Chunks: {stats.get('successful_chunks', 0)}
+• Failed Chunks: {stats.get('failed_chunks', 0)}
+• Timeout Chunks: {stats.get('timeout_chunks', 0)}
 
-🚀 USER-SELECTED METHODS BREAKDOWN:
-• Spectral Domain: {method_counts['spectral_methods']}/6 methods selected
-• Frequency Domain: {method_counts['frequency_methods']}/2 methods selected
-• Time-Frequency: {method_counts['time_frequency_methods']}/3 methods selected
-• Preprocessing: {method_counts['preprocessing_methods']}/5 methods selected
-• Advanced Methods: {method_counts['advanced_methods']}/4 methods selected
-
-⏱️ TIMEOUT & NOISE HANDLING:
+🔧 GEEKSFORGEEKS PREPROCESSING:
+"""
+    
+    if enable_preprocessing and stats.get('preprocessing_applied', False):
+        report += f"""• Resampling: ✅ Applied (16000 Hz)
+• Butterworth Filter: ✅ Applied ({GEEKSFORGEEKS_CUTOFF_FREQ} Hz cutoff, Order {GEEKSFORGEEKS_FILTER_ORDER})
+• Amplitude Normalization: ✅ Applied (0.95 max)
+• Quality Control: ✅ Applied (-0.99 to 0.99 clipping)
+• Final RMS Level: {stats.get('final_rms', 0):.4f}
+"""
+    else:
+        report += f"""• Preprocessing: ❌ DISABLED BY USER
+• Raw Audio Processing: ✅ NO PREPROCESSING APPLIED
+• User Choice: Skip enhancement pipeline
+"""
+    
+    report += f"""
+⏱️ TIMEOUT & ADAPTIVE HANDLING:
 • Timeout Protection: ✅ {CHUNK_TIMEOUT}s per chunk
-• User-Selected Quality Detection: ✅ Applied methods analysis
+• Adaptive Quality Detection: ✅ Success rate monitoring
+• Automatic Fallback: ✅ Multiple chunk sizes tried
 • Timeout Messages: ✅ "Input Audio Very noisy. Unable to extract details."
-• Fallback Systems: ✅ User-selected error recovery
+• Fallback Systems: ✅ COMPREHENSIVE ERROR RECOVERY
 
 🌐 TRANSLATION FEATURES:
 • Translation Control: ✅ USER-INITIATED (Optional)
 • Smart Text Chunking: ✅ ENABLED
 • Context Preservation: ✅ SENTENCE OVERLAP
-• Processing Method: ✅ USER-SELECTABLE PIPELINE
+• Processing Method: ✅ ADAPTIVE PIPELINE
 
-📊 USER-SELECTABLE SYSTEM STATUS:
-• Enhancement Method: ✅ USER-SELECTABLE CHECKBOX-CONTROLLED PIPELINE
-• Selected Methods: ✅ {total_methods} METHODS APPLIED
-• ASR Optimization: ✅ FINAL NORMALIZATION
-• Timeout Protection: ✅ ACTIVE (75s per chunk)
-• Quality Detection: ✅ USER-SELECTED ANALYSIS
+📊 ADAPTIVE SYSTEM STATUS:
+• Enhancement Method: ✅ ADAPTIVE CHUNK SIZING WITH GEEKSFORGEEKS PREPROCESSING
+• Preprocessing Control: ✅ USER TOGGLE (Enable/Disable)
+• Chunk Size Adaptation: ✅ AUTOMATIC FALLBACK MECHANISM
+• Success Rate Monitoring: ✅ ACTIVE
+• Quality Detection: ✅ ADAPTIVE ANALYSIS
 • Memory Optimization: ✅ GPU-AWARE CLEANUP
-• Error Recovery: ✅ USER-SELECTED FALLBACK SYSTEMS
+• Error Recovery: ✅ COMPREHENSIVE FALLBACK SYSTEMS
 
-✅ STATUS: USER-SELECTABLE TRANSCRIPTION COMPLETED
-🚀 AUDIO ENHANCEMENT: USER-CONTROLLED CHECKBOX PIPELINE
+✅ STATUS: ADAPTIVE TRANSCRIPTION COMPLETED
+🚀 AUDIO ENHANCEMENT: GEEKSFORGEEKS PREPROCESSING (USER CONTROLLED)
+📏 CHUNK SIZING: ADAPTIVE WITH AUTOMATIC FALLBACK
 ⏱️ TIMEOUT PROTECTION: 75-SECOND CHUNK SAFETY
-🔧 PREPROCESSING: USER-SELECTED METHODS ONLY
-📊 ASR OPTIMIZATION: CHECKBOX-CONTROLLED NORMALIZATION
-🎯 RELIABILITY: USER-SELECTABLE PROCESSING WITH COMPREHENSIVE FALLBACKS
+🔧 PREPROCESSING: USER TOGGLE (ENABLE/DISABLE)
+📊 OPTIMIZATION: ADAPTIVE CHUNK SIZE SELECTION
+🎯 RELIABILITY: ADAPTIVE PROCESSING WITH COMPREHENSIVE FALLBACKS
 """
     return report
 
-def create_user_selectable_interface():
-    """Create user-selectable speech enhancement interface with checkbox controls"""
+def create_adaptive_interface():
+    """Create adaptive speech enhancement interface with GeeksforGeeks preprocessing"""
     
-    user_selectable_css = """
+    adaptive_css = """
     :root {
         --primary-color: #0f172a;
         --secondary-color: #1e293b;
-        --accent-color: #06b6d4;
-        --checkbox-color: #10b981;
+        --accent-color: #10b981;
+        --adaptive-color: #06b6d4;
         --success-color: #10b981;
         --timeout-color: #f59e0b;
         --translation-color: #3b82f6;
@@ -2261,28 +1370,28 @@ def create_user_selectable_interface():
         min-height: 100vh !important;
     }
     
-    .user-selectable-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 15%, #06b6d4 30%, #10b981 45%, #f59e0b 60%, #3b82f6 75%, #8b5cf6 90%, #ec4899 100%) !important;
+    .adaptive-header {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 15%, #10b981 30%, #06b6d4 45%, #f59e0b 60%, #3b82f6 75%, #8b5cf6 90%, #ec4899 100%) !important;
         padding: 60px 40px !important;
         border-radius: 30px !important;
         text-align: center !important;
         margin-bottom: 50px !important;
-        box-shadow: 0 30px 60px rgba(6, 182, 212, 0.4) !important;
+        box-shadow: 0 30px 60px rgba(16, 185, 129, 0.4) !important;
         position: relative !important;
         overflow: hidden !important;
     }
     
-    .user-selectable-title {
+    .adaptive-title {
         font-size: 4rem !important;
         font-weight: 900 !important;
         color: white !important;
         margin-bottom: 20px !important;
-        text-shadow: 0 5px 15px rgba(6, 182, 212, 0.6) !important;
+        text-shadow: 0 5px 15px rgba(16, 185, 129, 0.6) !important;
         position: relative !important;
         z-index: 2 !important;
     }
     
-    .user-selectable-subtitle {
+    .adaptive-subtitle {
         font-size: 1.5rem !important;
         color: rgba(255,255,255,0.95) !important;
         font-weight: 600 !important;
@@ -2290,26 +1399,26 @@ def create_user_selectable_interface():
         z-index: 2 !important;
     }
     
-    .user-selectable-card {
+    .adaptive-card {
         background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%) !important;
         border: 3px solid var(--accent-color) !important;
         border-radius: 25px !important;
         padding: 35px !important;
         margin: 25px 0 !important;
-        box-shadow: 0 20px 40px rgba(6, 182, 212, 0.3) !important;
+        box-shadow: 0 20px 40px rgba(16, 185, 129, 0.3) !important;
         transition: all 0.4s ease !important;
     }
     
-    .checkbox-group {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%) !important;
-        border: 2px solid var(--checkbox-color) !important;
+    .preprocessing-toggle {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%) !important;
+        border: 3px solid var(--accent-color) !important;
         border-radius: 20px !important;
         padding: 25px !important;
         margin: 20px 0 !important;
     }
     
-    .user-selectable-button {
-        background: linear-gradient(135deg, var(--accent-color) 0%, var(--checkbox-color) 100%) !important;
+    .adaptive-button {
+        background: linear-gradient(135deg, var(--accent-color) 0%, var(--adaptive-color) 100%) !important;
         border: none !important;
         border-radius: 20px !important;
         color: white !important;
@@ -2317,13 +1426,13 @@ def create_user_selectable_interface():
         font-size: 1.3rem !important;
         padding: 20px 40px !important;
         transition: all 0.4s ease !important;
-        box-shadow: 0 10px 30px rgba(6, 182, 212, 0.5) !important;
+        box-shadow: 0 10px 30px rgba(16, 185, 129, 0.5) !important;
         text-transform: uppercase !important;
         letter-spacing: 1.5px !important;
     }
     
     .translation-button {
-        background: linear-gradient(135deg, var(--translation-color) 0%, var(--accent-color) 100%) !important;
+        background: linear-gradient(135deg, var(--translation-color) 0%, var(--adaptive-color) 100%) !important;
         border: none !important;
         border-radius: 18px !important;
         color: white !important;
@@ -2336,7 +1445,7 @@ def create_user_selectable_interface():
         letter-spacing: 1.2px !important;
     }
     
-    .status-user-selectable {
+    .status-adaptive {
         background: linear-gradient(135deg, var(--success-color), #059669) !important;
         color: white !important;
         padding: 18px 30px !important;
@@ -2365,16 +1474,7 @@ def create_user_selectable_interface():
         border-bottom: 4px solid var(--accent-color) !important;
     }
     
-    .checkbox-header {
-        color: var(--checkbox-color) !important;
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-        margin-bottom: 20px !important;
-        padding-bottom: 12px !important;
-        border-bottom: 3px solid var(--checkbox-color) !important;
-    }
-    
-    .log-user-selectable {
+    .log-adaptive {
         background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
         border: 3px solid var(--accent-color) !important;
         border-radius: 18px !important;
@@ -2390,20 +1490,20 @@ def create_user_selectable_interface():
     """
     
     with gr.Blocks(
-        css=user_selectable_css, 
+        css=adaptive_css, 
         theme=gr.themes.Base(),
-        title="🚀 User-Selectable Speech Enhancement & Transcription"
+        title="🚀 Adaptive Speech Enhancement & Transcription with GeeksforGeeks Preprocessing"
     ) as interface:
         
-        # User-Selectable Header
+        # Adaptive Header
         gr.HTML("""
-        <div class="user-selectable-header">
-            <h1 class="user-selectable-title">🚀 USER-SELECTABLE SPEECH ENHANCEMENT</h1>
-            <p class="user-selectable-subtitle">Checkbox-Controlled Preprocessing • 20 Available Methods • Custom Pipeline • ASR-Optimized • 75s Timeout</p>
+        <div class="adaptive-header">
+            <h1 class="adaptive-title">🚀 ADAPTIVE SPEECH TRANSCRIPTION</h1>
+            <p class="adaptive-subtitle">GeeksforGeeks Preprocessing • Adaptive Chunk Sizing • Enable/Disable Toggle • Auto Fallback • 75s Timeout</p>
             <div style="margin-top: 25px;">
-                <span style="background: rgba(6, 182, 212, 0.25); color: #06b6d4; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">☑️ CHECKBOX CONTROL</span>
-                <span style="background: rgba(16, 185, 129, 0.25); color: #10b981; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">🔧 20 METHODS</span>
-                <span style="background: rgba(59, 130, 246, 0.25); color: #3b82f6; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">📊 CUSTOM PIPELINE</span>
+                <span style="background: rgba(16, 185, 129, 0.25); color: #10b981; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">🔧 GEEKSFORGEEKS</span>
+                <span style="background: rgba(6, 182, 212, 0.25); color: #06b6d4; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">📏 ADAPTIVE</span>
+                <span style="background: rgba(59, 130, 246, 0.25); color: #3b82f6; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">⚡ TOGGLE</span>
                 <span style="background: rgba(245, 158, 11, 0.25); color: #f59e0b; padding: 12px 24px; border-radius: 30px; margin: 0 10px; font-size: 1.1rem; font-weight: 700;">⏱️ 75s TIMEOUT</span>
             </div>
         </div>
@@ -2411,16 +1511,16 @@ def create_user_selectable_interface():
         
         # System Status
         status_display = gr.Textbox(
-            label="🚀 User-Selectable System Status",
-            value="Initializing USER-SELECTABLE speech enhancement system with checkbox controls...",
+            label="🚀 Adaptive System Status",
+            value="Initializing ADAPTIVE speech transcription with GeeksforGeeks preprocessing...",
             interactive=False,
-            elem_classes="status-user-selectable"
+            elem_classes="status-adaptive"
         )
         
         # Main Interface
         with gr.Row():
             with gr.Column(scale=1):
-                gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 User-Selectable Control Panel</div>')
+                gr.HTML('<div class="adaptive-card"><div class="card-header">🚀 Adaptive Control Panel</div>')
                 
                 audio_input = gr.Audio(
                     label="🎵 Upload Audio File or Record Live",
@@ -2431,115 +1531,54 @@ def create_user_selectable_interface():
                     choices=list(SUPPORTED_LANGUAGES.keys()),
                     value="🌍 Auto-detect",
                     label="🌍 Language Selection (150+ Supported)",
-                    info="All languages with USER-SELECTABLE enhancement"
+                    info="All languages with ADAPTIVE enhancement"
                 )
                 
-                enhancement_radio = gr.Radio(
-                    choices=[
-                        ("🟢 Light - USER-SELECTABLE minimal processing", "light"),
-                        ("🟡 Moderate - USER-SELECTABLE balanced enhancement", "moderate"), 
-                        ("🔴 Aggressive - USER-SELECTABLE maximum processing", "aggressive")
-                    ],
-                    value="moderate",
-                    label="🚀 User-Selectable Enhancement Level",
-                    info="Enhancement level affects selected method parameters"
+                # GeeksforGeeks Preprocessing Toggle
+                gr.HTML("""
+                <div class="preprocessing-toggle">
+                    <div style="color: #10b981; font-size: 1.4rem; font-weight: 700; margin-bottom: 15px;">🔧 GeeksforGeeks Preprocessing Control</div>
+                    <p style="color: #cbd5e1; margin-bottom: 15px; font-size: 1rem;">
+                        Enable/disable audio preprocessing based on GeeksforGeeks methodology. Includes resampling, Butterworth filtering, and normalization.
+                    </p>
+                </div>
+                """)
+                
+                enable_preprocessing = gr.Checkbox(
+                    label="🔧 Enable GeeksforGeeks Preprocessing",
+                    value=True,
+                    info="Applies resampling (16kHz), Butterworth low-pass filter (4kHz), and amplitude normalization"
                 )
-                
-                gr.HTML('</div>')
-                
-                # Checkbox Groups for Method Selection
-                gr.HTML('<div class="user-selectable-card"><div class="card-header">☑️ Select Preprocessing Methods</div>')
-                
-                # Spectral Domain Methods
-                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Spectral Domain Methods (6 available)</div>')
-                spectral_methods = gr.CheckboxGroup(
-                    choices=[
-                        "Spectral Subtraction",
-                        "Multi-Band Spectral Subtraction", 
-                        "Wiener Filtering",
-                        "MMSE-STSA Estimator",
-                        "MMSE-LSA Estimator",
-                        "OM-LSA Estimator"
-                    ],
-                    value=["Spectral Subtraction", "Wiener Filtering"],  # Default selections
-                    label="🔬 Spectral Domain Methods",
-                    info="Advanced spectral processing techniques"
-                )
-                gr.HTML('</div>')
-                
-                # Frequency Domain Methods
-                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🎵 Frequency Domain Methods (2 available)</div>')
-                frequency_methods = gr.CheckboxGroup(
-                    choices=[
-                        "Comprehensive Frequency Filtering",
-                        "Adaptive Filtering"
-                    ],
-                    value=["Comprehensive Frequency Filtering"],  # Default selection
-                    label="🎵 Frequency Domain Methods",
-                    info="Frequency-based filtering techniques"
-                )
-                gr.HTML('</div>')
-                
-                # Time-Frequency Domain Methods
-                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Time-Frequency Methods (3 available)</div>')
-                time_frequency_methods = gr.CheckboxGroup(
-                    choices=[
-                        "DA-STFT Processing",
-                        "Time-Frequency Masking",
-                        "Frame-Based Processing"
-                    ],
-                    value=["Frame-Based Processing"],  # Default selection
-                    label="🔬 Time-Frequency Methods",
-                    info="Advanced time-frequency processing"
-                )
-                gr.HTML('</div>')
-                
-                # Preprocessing & Normalization Methods
-                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">📊 Preprocessing & Normalization (5 available)</div>')
-                preprocessing_methods = gr.CheckboxGroup(
-                    choices=[
-                        "Z-score Min-Max Normalization",
-                        "Dynamic Range Compression",
-                        "Noise Gating",
-                        "Temporal Smoothing",
-                        "Frame Averaging"
-                    ],
-                    value=["Dynamic Range Compression", "Noise Gating"],  # Default selections
-                    label="📊 Preprocessing Methods",
-                    info="Signal conditioning and normalization"
-                )
-                gr.HTML('</div>')
-                
-                # Advanced Methods
-                gr.HTML('<div class="checkbox-group"><div class="checkbox-header">🔬 Advanced Methods (4 available)</div>')
-                advanced_methods = gr.CheckboxGroup(
-                    choices=[
-                        "Signal Subspace Approach",
-                        "Noise Profile Analysis",
-                        "SNR Enhancement",
-                        "Advanced VAD Enhancement"
-                    ],
-                    value=["Advanced VAD Enhancement"],  # Default selection
-                    label="🔬 Advanced Methods",
-                    info="State-of-the-art enhancement techniques"
-                )
-                gr.HTML('</div>')
                 
                 transcribe_btn = gr.Button(
-                    "🚀 START USER-SELECTABLE TRANSCRIPTION",
+                    "🚀 START ADAPTIVE TRANSCRIPTION",
                     variant="primary",
-                    elem_classes="user-selectable-button",
+                    elem_classes="adaptive-button",
                     size="lg"
                 )
                 
                 gr.HTML('</div>')
+                
+                # Info Panel
+                gr.HTML("""
+                <div class="adaptive-card">
+                    <div class="card-header">📏 Adaptive Chunk Sizing Info</div>
+                    <div style="color: #cbd5e1; font-size: 1rem; line-height: 1.6;">
+                        <p><strong>Default:</strong> 30-second chunks</p>
+                        <p><strong>Fallbacks:</strong> 10s → 15s → 20s → 40s</p>
+                        <p><strong>Auto-Retry:</strong> Switches chunk size if transcription fails</p>
+                        <p><strong>Success Rate:</strong> Monitors and adapts automatically</p>
+                        <p><strong>Timeout:</strong> 75 seconds per chunk with noise detection</p>
+                    </div>
+                </div>
+                """)
             
             with gr.Column(scale=2):
-                gr.HTML('<div class="user-selectable-card"><div class="card-header">📊 User-Selectable Results</div>')
+                gr.HTML('<div class="adaptive-card"><div class="card-header">📊 Adaptive Results</div>')
                 
                 transcription_output = gr.Textbox(
-                    label="📝 Original Transcription (USER-SELECTED Enhanced)",
-                    placeholder="Your USER-SELECTABLE transcription will appear here...",
+                    label="📝 Original Transcription (ADAPTIVE Enhanced)",
+                    placeholder="Your ADAPTIVE transcription will appear here...",
                     lines=12,
                     max_lines=18,
                     interactive=False,
@@ -2582,7 +1621,7 @@ def create_user_selectable_interface():
         # Audio Comparison
         with gr.Row():
             with gr.Column():
-                gr.HTML('<div class="user-selectable-card"><div class="card-header">📥 Original Audio</div>')
+                gr.HTML('<div class="adaptive-card"><div class="card-header">📥 Original Audio</div>')
                 original_audio_player = gr.Audio(
                     label="Original Audio",
                     interactive=False
@@ -2590,9 +1629,9 @@ def create_user_selectable_interface():
                 gr.HTML('</div>')
             
             with gr.Column():
-                gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 USER-SELECTABLE Enhanced Audio</div>')
+                gr.HTML('<div class="adaptive-card"><div class="card-header">🚀 ADAPTIVE Enhanced Audio</div>')
                 enhanced_audio_player = gr.Audio(
-                    label="USER-SELECTABLE Enhanced Audio (Custom Checkbox Pipeline)",
+                    label="ADAPTIVE Enhanced Audio (GeeksforGeeks Pipeline)",
                     interactive=False
                 )
                 gr.HTML('</div>')
@@ -2600,54 +1639,52 @@ def create_user_selectable_interface():
         # Reports
         with gr.Row():
             with gr.Column():
-                with gr.Accordion("🚀 USER-SELECTABLE Enhancement Report", open=False):
+                with gr.Accordion("🚀 ADAPTIVE Enhancement Report", open=False):
                     enhancement_report = gr.Textbox(
-                        label="USER-SELECTABLE Enhancement Report",
+                        label="ADAPTIVE Enhancement Report",
                         lines=20,
                         show_copy_button=True,
                         interactive=False
                     )
             
             with gr.Column():
-                with gr.Accordion("📋 USER-SELECTABLE Processing Report", open=False):
+                with gr.Accordion("📋 ADAPTIVE Processing Report", open=False):
                     processing_report = gr.Textbox(
-                        label="USER-SELECTABLE Processing Report", 
+                        label="ADAPTIVE Processing Report", 
                         lines=20,
                         show_copy_button=True,
                         interactive=False
                     )
         
         # System Monitoring
-        gr.HTML('<div class="user-selectable-card"><div class="card-header">🚀 USER-SELECTABLE System Monitoring</div>')
+        gr.HTML('<div class="adaptive-card"><div class="card-header">🚀 ADAPTIVE System Monitoring</div>')
         
         log_display = gr.Textbox(
             label="",
-            value="🚀 USER-SELECTABLE system ready - checkbox controls active...",
+            value="🚀 ADAPTIVE system ready - GeeksforGeeks preprocessing available...",
             interactive=False,
             lines=14,
             max_lines=20,
-            elem_classes="log-user-selectable",
+            elem_classes="log-adaptive",
             show_label=False
         )
         
         with gr.Row():
-            refresh_logs_btn = gr.Button("🔄 Refresh USER-SELECTABLE Logs", size="sm")
+            refresh_logs_btn = gr.Button("🔄 Refresh ADAPTIVE Logs", size="sm")
             clear_logs_btn = gr.Button("🗑️ Clear Logs", size="sm")
         
         gr.HTML('</div>')
         
         # Event Handlers
         transcribe_btn.click(
-            fn=transcribe_audio_user_selectable,
-            inputs=[audio_input, language_dropdown, enhancement_radio, 
-                   spectral_methods, frequency_methods, time_frequency_methods, 
-                   preprocessing_methods, advanced_methods],
+            fn=transcribe_audio_adaptive,
+            inputs=[audio_input, language_dropdown, enable_preprocessing],
             outputs=[transcription_output, original_audio_player, enhanced_audio_player, enhancement_report, processing_report],
             show_progress=True
         )
         
         translate_btn.click(
-            fn=translate_transcription_user_selectable,
+            fn=translate_transcription_adaptive,
             inputs=[transcription_output],
             outputs=[english_translation_output],
             show_progress=True
@@ -2673,31 +1710,31 @@ def create_user_selectable_interface():
             outputs=[log_display]
         )
         
-        def clear_user_selectable_logs():
+        def clear_adaptive_logs():
             global log_capture
             if log_capture:
                 with log_capture.lock:
                     log_capture.log_buffer.clear()
-            return "🚀 USER-SELECTABLE logs cleared - system ready"
+            return "🚀 ADAPTIVE logs cleared - system ready"
         
         clear_logs_btn.click(
-            fn=clear_user_selectable_logs,
+            fn=clear_adaptive_logs,
             inputs=[],
             outputs=[log_display]
         )
         
-        def auto_refresh_user_selectable_logs():
+        def auto_refresh_adaptive_logs():
             return get_current_logs()
         
         timer = gr.Timer(value=3, active=True)
         timer.tick(
-            fn=auto_refresh_user_selectable_logs,
+            fn=auto_refresh_adaptive_logs,
             inputs=[],
             outputs=[log_display]
         )
         
         interface.load(
-            fn=initialize_user_selectable_transcriber,
+            fn=initialize_adaptive_transcriber,
             inputs=[],
             outputs=[status_display]
         )
@@ -2705,63 +1742,45 @@ def create_user_selectable_interface():
     return interface
 
 def main():
-    """Launch the complete USER-SELECTABLE speech enhancement transcription system"""
+    """Launch the complete ADAPTIVE speech transcription system"""
     
     if "/path/to/your/" in MODEL_PATH:
         print("="*80)
-        print("🚀 USER-SELECTABLE SPEECH ENHANCEMENT SYSTEM CONFIGURATION REQUIRED")
+        print("🚀 ADAPTIVE SPEECH TRANSCRIPTION SYSTEM CONFIGURATION REQUIRED")
         print("="*80)
         print("Please update the MODEL_PATH variable with your local Gemma 3N model directory")
         print("Download from: https://huggingface.co/google/gemma-3n-e4b-it")
         print("="*80)
         return
     
-    setup_user_selectable_logging()
+    setup_adaptive_logging()
     
-    print("🚀 Launching USER-SELECTABLE SPEECH ENHANCEMENT & TRANSCRIPTION SYSTEM...")
+    print("🚀 Launching ADAPTIVE SPEECH TRANSCRIPTION SYSTEM...")
     print("="*80)
-    print("☑️ USER-SELECTABLE CHECKBOX FEATURES - ALL METHODS AVAILABLE:")
+    print("🔧 GEEKSFORGEEKS PREPROCESSING IMPLEMENTATION:")
     print("="*80)
-    print("🔬 SPECTRAL DOMAIN METHODS (6 checkbox options):")
-    print("   ☑️ Spectral Subtraction")
-    print("   ☑️ Multi-Band Spectral Subtraction (MBSS)")
-    print("   ☑️ Wiener Filtering with optimal parameters")
-    print("   ☑️ MMSE Short-Time Spectral Amplitude (MMSE-STSA) Estimator")
-    print("   ☑️ MMSE Log-Spectral Amplitude (MMSE-LSA) Estimator")
-    print("   ☑️ Optimally-Modified Log-Spectral Amplitude (OM-LSA) Estimator")
+    print("📊 GEEKSFORGEEKS PIPELINE STAGES:")
+    print("   ✅ Stage 1: Audio Resampling (16000 Hz)")
+    print("   ✅ Stage 2: Butterworth Low-pass Filter (4000 Hz cutoff, Order 4)")
+    print("   ✅ Stage 3: Amplitude Normalization (0.95 max)")
+    print("   ✅ Stage 4: Quality Control Clipping (-0.99 to 0.99)")
     print("="*80)
-    print("🎵 FREQUENCY DOMAIN METHODS (2 checkbox options):")
-    print("   ☑️ Comprehensive Frequency Filtering (FIXED 85Hz-7900Hz)")
-    print("   ☑️ Adaptive Filtering with LMS algorithm")
+    print("📏 ADAPTIVE CHUNK SIZING FEATURES:")
+    print("   📏 Default Chunk Size: 30 seconds")
+    print("   📏 Fallback Chunk Sizes: 10s, 15s, 20s, 40s")
+    print("   🔄 Automatic Fallback Mechanism: Enabled")
+    print("   📊 Success Rate Monitoring: Active")
+    print("   🎯 Optimal Chunk Detection: Automatic")
     print("="*80)
-    print("🔬 TIME-FREQUENCY DOMAIN METHODS (3 checkbox options):")
-    print("   ☑️ Differentiable Adaptive Short-Time Fourier Transform (DA-STFT)")
-    print("   ☑️ Time-Frequency Masking for noise isolation")
-    print("   ☑️ Frame-Based Processing with overlap-add")
-    print("="*80)
-    print("📊 PREPROCESSING & NORMALIZATION (5 checkbox options):")
-    print("   ☑️ Z-score Min-Max Normalization for enhanced feature extraction")
-    print("   ☑️ Dynamic Range Compression with attack/release times")
-    print("   ☑️ Noise Gating with adaptive thresholds")
-    print("   ☑️ Temporal Smoothing to reduce transient noise")
-    print("   ☑️ Frame Averaging to improve Signal-to-Noise Ratio")
-    print("="*80)
-    print("🔬 ADVANCED METHODS (4 checkbox options):")
-    print("   ☑️ Signal Subspace Approach (SSA) with SVD decomposition")
-    print("   ☑️ Noise Profile Analysis with targeted reduction")
-    print("   ☑️ Signal-to-Noise Ratio (SNR) Enhancement")
-    print("   ☑️ Advanced VAD Enhancement with multi-feature detection")
-    print("="*80)
-    print("🚀 USER-SELECTABLE FEATURES:")
-    print("   👤 Checkbox Control: Users select which methods to apply")
-    print("   🔧 Custom Pipeline: Only selected methods are executed")
-    print("   📊 Method Reports: Detailed breakdown of applied techniques")
-    print("   ⚡ Efficiency: Skip unused methods for faster processing")
-    print("   🎯 Flexibility: Mix and match techniques for optimal results")
+    print("⚡ ENABLE/DISABLE PREPROCESSING CONTROL:")
+    print("   👤 User Control: Complete enable/disable toggle")
+    print("   🔧 GeeksforGeeks Pipeline: User can skip entirely")
+    print("   📊 Raw Audio Processing: Available when disabled")
+    print("   🎛️ Flexible Processing: User choice driven")
     print("="*80)
     print("⏱️ TIMEOUT PROTECTION:")
     print(f"   ⏱️ {CHUNK_TIMEOUT}-second timeout per chunk")
-    print("   ⏱️ User-selected quality detection and assessment")
+    print("   ⏱️ Adaptive quality detection and assessment")
     print("   ⏱️ 'Input Audio Very noisy. Unable to extract details.' messages")
     print("   ⏱️ Graceful degradation for problematic audio")
     print("="*80)
@@ -2777,17 +1796,18 @@ def main():
     print("   • All major world languages and regional variants")
     print("   • Smart English detection to skip unnecessary translation")
     print("="*80)
-    print("🚀 USER-SELECTABLE ADVANTAGES:")
-    print("   ☑️ Complete Control: Users decide which methods to use")
-    print("   ⚡ Optimized Performance: Only selected methods consume resources")
-    print("   🎯 Targeted Processing: Focus on specific enhancement needs")
-    print("   📊 Transparent Reports: See exactly which methods were applied")
-    print("   🔧 Flexible Combinations: Create custom processing pipelines")
-    print("   💡 Educational: Learn which methods work best for your audio")
+    print("🚀 ADAPTIVE SYSTEM ADVANTAGES:")
+    print("   📏 Adaptive Chunk Sizing: Automatically finds optimal chunk size")
+    print("   🔄 Fallback Mechanism: Tries multiple chunk sizes if needed")
+    print("   ⚡ Preprocessing Control: User can enable/disable GeeksforGeeks pipeline")
+    print("   📊 Success Rate Monitoring: Tracks transcription quality")
+    print("   🎯 Automatic Optimization: Selects best chunk size for audio")
+    print("   🛡️ Robust Error Handling: Comprehensive fallback systems")
+    print("   💡 Educational: Shows which chunk size worked best")
     print("="*80)
     
     try:
-        interface = create_user_selectable_interface()
+        interface = create_adaptive_interface()
         
         interface.launch(
             server_name="0.0.0.0",
@@ -2803,22 +1823,11 @@ def main():
         )
         
     except Exception as e:
-        print(f"❌ USER-SELECTABLE system launch failed: {e}")
-        print("🔧 USER-SELECTABLE system troubleshooting:")
+        print(f"❌ ADAPTIVE system launch failed: {e}")
+        print("🔧 ADAPTIVE system troubleshooting:")
         print("   • Verify model path is correct and accessible")
         print("   • Check GPU memory availability and drivers")
         print("   • Ensure all dependencies are installed:")
         print("     pip install --upgrade torch transformers gradio librosa soundfile")
-        print("     pip install --upgrade noisereduce scipy nltk scikit-learn")
-        print("   • Verify Python environment and version compatibility")
-        print("   • Check port 7860 availability")
-        print("   • ALL preprocessing methods are available as checkbox controls")
-        print("   • Users can select any combination of the 20 available methods")
-        print("   • Custom processing pipelines based on user selections")
-        print("   • FIXED hann window function (no longer hanning)")
-        print("   • Comprehensive fallback systems are active")
-        print("="*80)
-
-if __name__ == "__main__":
-    main()
-
+        print("     pip install --upgrade scipy nltk")
+        print("   • Verify Python
