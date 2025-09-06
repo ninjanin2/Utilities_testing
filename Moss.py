@@ -2,7 +2,7 @@ import os
 import math
 import tempfile
 import warnings
-from typing import Dict, Any, List, Tuple, Optional
+from typing import List, Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -11,21 +11,18 @@ import torchaudio
 
 warnings.filterwarnings("ignore")
 
-# Optional librosa fallback
+# Optional librosa fallback for compressed formats not supported by torchaudio build
 try:
     import librosa
     LIBROSA_AVAILABLE = True
 except Exception:
     LIBROSA_AVAILABLE = False
 
-# =========================
-# User setting
-# =========================
-MODEL_PATH = "path/to/your/MossFormer2_SE_48K_checkpoint.pt"  # update this
+# =============== USER SETTINGS ===============
+MODEL_PATH = "path/to/your/MossFormer2_SE_48K_checkpoint.pt"  # Update this to your checkpoint
+# ============================================
 
-# =========================
-# Safe helpers
-# =========================
+# ----------------- Safe helpers -----------------
 def safe_len(x) -> int:
     try:
         return len(x)
@@ -44,28 +41,26 @@ def safe_list_get(lst, idx, default=None):
     except Exception:
         return default
 
-# =========================
-# Model blocks
-# =========================
+# ----------------- Model blocks -----------------
 class LayerNormalization4DCF(nn.Module):
     def __init__(self, input_dimension, eps=1e-5):
         super().__init__()
         if not isinstance(input_dimension, (list, tuple)) or len(input_dimension) != 2:
             raise ValueError("input_dimension must be list/tuple of length 2")
-        param_size = [1, input_dimension, 1, input_dimension[25]]
+        param_size = [1, input_dimension, 1, input_dimension[9]]
         self.gamma = nn.Parameter(torch.ones(*param_size, dtype=torch.float32))
         self.beta = nn.Parameter(torch.zeros(*param_size, dtype=torch.float32))
         self.eps = eps
 
     def forward(self, x):
         if x.ndim != 4:
-            raise ValueError(f"LayerNormalization4DCF expects 4D, got {x.ndim}D")
+            raise ValueError(f"LayerNormalization4DCF expects 4D input, got {x.ndim}D")
         mu_ = x.mean(dim=(1, 3), keepdim=True)
         std_ = torch.sqrt(x.var(dim=(1, 3), unbiased=False, keepdim=True) + self.eps)
         return (x - mu_) / std_ * self.gamma + self.beta
 
 class PositionalEncoding(nn.Module):
-    # Only 'pe' is a buffer; no inv_freq buffer to avoid duplication conflicts
+    # Register only 'pe' as buffer; do NOT register inv_freq to avoid duplicate buffer conflicts
     def __init__(self, d_model: int, max_len: int = 8000):
         super().__init__()
         if d_model <= 0 or max_len <= 0:
@@ -78,7 +73,7 @@ class PositionalEncoding(nn.Module):
             pe[:, 0::2] = torch.sin(pos * div_term)
             if d_model > 1:
                 pe[:, 1::2] = torch.cos(pos * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        pe = pe.unsqueeze(0).transpose(0, 1)  # [max_len, 1, d_model]
         self.register_buffer("pe", pe, persistent=False)
 
     def forward(self, x):
@@ -125,46 +120,34 @@ class MossFormerBlock(nn.Module):
 
 class MossFormer_MaskNet(nn.Module):
     """
-    Predicts a [B, T, Fmask] mask from input mel features, where input is [B, N=180, S] and output Fmask=961 for 48k STFT (n_fft=1920) alignment.
+    Mel(180) -> transformer blocks -> frequency mask with 961 bins (for 48 kHz STFT with n_fft=1920).
     """
     def __init__(self, in_channels=180, d_model=512, out_freq_bins=961, n_layers=18, nhead=8):
         super().__init__()
-        self.in_channels = in_channels
-        self.d_model = d_model
-        self.out_freq_bins = out_freq_bins
-
-        # Encoder to d_model
         self.conv1d_encoder = nn.Conv1d(in_channels, d_model, kernel_size=1)
         self.norm = LayerNormalization4DCF([d_model, 1])
         self.pos_enc = PositionalEncoding(d_model)
-
-        # Sequence blocks
         self.blocks = nn.ModuleList([MossFormerBlock(d_model, nhead, 2048, 0.1) for _ in range(n_layers)])
-
-        # Decoder back to frequency bins
         self.conv1d_decoder = nn.Conv1d(d_model, out_freq_bins, kernel_size=1)
 
     def forward(self, x):
-        # x: [B, N=180, S]
-        x = x.transpose(1, 2)            # [B, S, N]
-        x = x.transpose(1, 2)            # [B, N, S]
-        x = self.conv1d_encoder(x)       # [B, d_model, S]
-        x = x.unsqueeze(-1)              # [B, d_model, S, 1]
-        x = self.norm(x)                 # [B, d_model, S, 1]
-        x = x.squeeze(-1)                # [B, d_model, S]
-        x = x.transpose(1, 2)            # [B, S, d_model]
-        x = self.pos_enc(x)              # [B, S, d_model]
+        # x: [B, 180, S]
+        x = x.transpose(1, 2)              # [B, S, 180]
+        x = x.transpose(1, 2)              # [B, 180, S]
+        x = self.conv1d_encoder(x)         # [B, d_model, S]
+        x = x.unsqueeze(-1)                # [B, d_model, S, 1]
+        x = self.norm(x)                   # [B, d_model, S, 1]
+        x = x.squeeze(-1)                  # [B, d_model, S]
+        x = x.transpose(1, 2)              # [B, S, d_model]
+        x = self.pos_enc(x)                # [B, S, d_model]
         for block in self.blocks:
-            x = block(x)                 # [B, S, d_model]
-        x = x.transpose(1, 2)            # [B, d_model, S]
-        mask = self.conv1d_decoder(x)    # [B, Fmask, S]
-        mask = mask.transpose(1, 2)      # [B, S, Fmask]  where Fmask=961
+            x = block(x)                   # [B, S, d_model]
+        x = x.transpose(1, 2)              # [B, d_model, S]
+        mask = self.conv1d_decoder(x)      # [B, 961, S]
+        mask = mask.transpose(1, 2)        # [B, S, 961]
         return mask
 
 class MossFormer2_SE_48K(nn.Module):
-    """
-    Wrapper that outputs a mask tensor directly (no lists) to avoid index errors.
-    """
     def __init__(self):
         super().__init__()
         self.net = MossFormer_MaskNet(in_channels=180, d_model=512, out_freq_bins=961, n_layers=18, nhead=8)
@@ -174,13 +157,10 @@ class MossFormer2_SE_48K(nn.Module):
             raise ValueError(f"Expected mel [B, 180, S], got {tuple(mel.shape)}")
         return self.net(mel)  # [B, S, 961]
 
-# =========================
-# Checkpoint loading (robust)
-# =========================
+# --------------- Robust checkpoint loading ---------------
 def load_checkpoint_resilient(model: nn.Module, ckpt_path: str, device: str = "cpu"):
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-    # Try multiple load patterns
     last_error = None
     for map_loc in [device, "cpu"]:
         for weights_only in [False, True]:
@@ -195,38 +175,34 @@ def load_checkpoint_resilient(model: nn.Module, ckpt_path: str, device: str = "c
                         state_dict = ckpt
                 else:
                     state_dict = ckpt
-                # Normalize keys
-                model_keys = set(model.state_dict().keys())
+                # Normalize keys and keep shape-compatible parameters only
+                model_sd = model.state_dict()
+                model_keys = set(model_sd.keys())
                 cleaned = {}
                 for k, v in state_dict.items():
                     if not isinstance(k, str):
                         continue
                     candidates = [k]
-                    if k.startswith("module."):
-                        candidates.append(k[7:])
-                    if k.startswith("model."):
-                        candidates.append(k[6:])
-                    if k.startswith("net."):
-                        candidates.append(k[4:])
-                    # Try suffix match for stubborn prefixes
+                    if k.startswith("module."): candidates.append(k[7:])
+                    if k.startswith("model."):  candidates.append(k[6:])
+                    if k.startswith("net."):    candidates.append(k[4:])
                     matched_key = None
                     for cand in candidates:
                         if cand in model_keys:
                             matched_key = cand
                             break
                     if matched_key is None:
-                        # Suffix heuristic: match the tail if unique and shapes agree
+                        # Heuristic: try tail-suffix match
                         parts = k.split(".")
                         for s in range(len(parts)):
                             tail = ".".join(parts[s:])
-                            if tail in model_keys:
-                                if tail in model.state_dict() and getattr(v, "shape", None) == model.state_dict()[tail].shape:
-                                    matched_key = tail
-                                    break
-                    if matched_key and matched_key in model.state_dict() and getattr(v, "shape", None) == model.state_dict()[matched_key].shape:
+                            if tail in model_keys and getattr(v, "shape", None) == model_sd[tail].shape:
+                                matched_key = tail
+                                break
+                    if matched_key and getattr(v, "shape", None) == model_sd[matched_key].shape:
                         cleaned[matched_key] = v
                 missing, unexpected = model.load_state_dict(cleaned, strict=False)
-                print(f"Loaded with {len(cleaned)} matched keys; missing={len(missing)}, unexpected={len(unexpected)}")
+                print(f"Loaded checkpoint with {len(cleaned)} matched keys; missing={len(missing)}, unexpected={len(unexpected)}")
                 model.to(device).eval()
                 return
             except Exception as e:
@@ -234,22 +210,20 @@ def load_checkpoint_resilient(model: nn.Module, ckpt_path: str, device: str = "c
                 continue
     raise RuntimeError(f"Failed to load checkpoint robustly: {last_error}")
 
-# =========================
-# Enhancement pipeline
-# =========================
+# ----------------- Enhancement pipeline -----------------
 class Enhancer48k:
     def __init__(self, ckpt_path: str, device: Optional[str] = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        # STFT aligned to 961 bins (n_fft=1920)
         self.sample_rate = 48000
+        # Choose n_fft so F = n_fft//2 + 1 = 961 for mask alignment
         self.n_fft = 1920
         self.win_length = 1920
         self.hop_length = 480
         self.n_mels = 180
+
         self.model = MossFormer2_SE_48K().to(self.device).eval()
         load_checkpoint_resilient(self.model, ckpt_path, self.device)
 
-        # Transforms
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.sample_rate,
             n_fft=self.n_fft,
@@ -264,17 +238,17 @@ class Enhancer48k:
         ).to(self.device)
         self.window = torch.hann_window(self.win_length, device=self.device)
 
-        # Chunking
+        # Chunking (long-form support)
         self.chunk_sec = 15.0
         self.overlap_sec = 3.0
         self.chunk_samples = int(self.chunk_sec * self.sample_rate)
         self.overlap_samples = int(self.overlap_sec * self.sample_rate)
         self.hop_samples = max(1, self.chunk_samples - self.overlap_samples)
-        fade = self.overlap_samples // 2 if self.overlap_samples > 0 else 1
+        fade = max(1, self.overlap_samples // 2)
         self.fade_in = torch.linspace(0, 1, fade, device=self.device)
         self.fade_out = torch.linspace(1, 0, fade, device=self.device)
 
-    # ---------- IO ----------
+    # ---- IO ----
     def load_audio(self, path: str) -> torch.Tensor:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Audio not found: {path}")
@@ -284,36 +258,34 @@ class Enhancer48k:
             if not LIBROSA_AVAILABLE:
                 raise
             arr, sr = librosa.load(path, sr=None, mono=False)
-            wav = torch.from_numpy(arr if arr.ndim > 1 else arr[None, :]).float()
+            if arr.ndim == 1:
+                arr = arr[None, :]
+            wav = torch.from_numpy(arr).float()
         wav = wav.float()
-        # Normalize to [-1, 1]
+        # Normalize and mono
         m = wav.abs().max()
         if m > 0:
             wav = wav / m
-        # Mono
         if wav.size(0) > 1:
             wav = wav.mean(dim=0, keepdim=True)
-        # Resample to 48k
+        # Resample to 48k if needed
         if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
-            wav = resampler(wav)
-        # Final headroom
+            wav = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)(wav)
+        # Headroom
         m = wav.abs().max()
         if m > 0:
             wav = wav / m * 0.95
         return wav.to(self.device)  # [1, T]
 
-    # ---------- Features ----------
+    # ---- Features ----
     def mel_from_wave(self, wav_1_T: torch.Tensor) -> torch.Tensor:
-        # wav_1_T: [1, T] on device; return [1, 180, S]
-        mel = self.mel_transform(wav_1_T)
+        mel = self.mel_transform(wav_1_T)  # [1, 180, S]
         mel = torch.log(mel + 1e-8)
         mean = mel.mean(dim=2, keepdim=True)
         std = mel.std(dim=2, keepdim=True).clamp_min(1e-8)
-        mel = (mel - mean) / std
-        return mel
+        return (mel - mean) / std  # [1, 180, S]
 
-    # ---------- STFT ----------
+    # ---- STFT ----
     def stft(self, wav_1_T: torch.Tensor) -> torch.Tensor:
         return torch.stft(
             wav_1_T,
@@ -337,12 +309,26 @@ class Enhancer48k:
             length=length,
         )  # [T]
 
-    # ---------- Chunking ----------
+    # ---- Interpolation helpers (safe shapes) ----
+    @staticmethod
+    def interp_time(mask_F_S: torch.Tensor, target_S: int) -> torch.Tensor:
+        # mask_F_S: [F, S] -> [F, target_S]
+        x = mask_F_S.unsqueeze(0).unsqueeze(0)      # [1,1,F,S]
+        x = F.interpolate(x, size=(mask_F_S.size(0), target_S), mode="bilinear", align_corners=False)
+        return x.squeeze(0).squeeze(0)              # [F, target_S]
+
+    @staticmethod
+    def interp_freq(mask_F_S: torch.Tensor, target_F: int) -> torch.Tensor:
+        # mask_F_S: [F, S] -> [target_F, S]
+        x = mask_F_S.transpose(0, 1).unsqueeze(0).unsqueeze(0)  # [1,1,S,F]
+        x = F.interpolate(x, size=(mask_F_S.size(1), target_F), mode="bilinear", align_corners=False)
+        return x.squeeze(0).squeeze(0).transpose(0, 1)          # [target_F, S]
+
+    # ---- Chunking ----
     def chunk_indices(self, T: int) -> List[Tuple[int, int]]:
         if T <= self.chunk_samples:
             return [(0, T)]
-        idxs = []
-        start = 0
+        idxs, start = [], 0
         while start < T:
             end = min(start + self.chunk_samples, T)
             idxs.append((start, end))
@@ -351,62 +337,54 @@ class Enhancer48k:
             start += self.hop_samples
         return idxs
 
-    def crossfade_blend(self, out_wave_1_T: torch.Tensor, chunk_wave_1_t: torch.Tensor, start: int, end: int):
-        # out_wave_1_T is target buffer [1, T]; chunk_wave_1_t is [1, t_len]
+    def crossfade_blend(self, out_1_T: torch.Tensor, chunk_1_t: torch.Tensor, start: int, end: int):
         t_len = end - start
         if t_len <= 0:
             return
-        seg = chunk_wave_1_t[:, :t_len]
-        # crossfade at chunk boundaries
+        seg = chunk_1_t[:, :t_len]
         fade_n = min(self.fade_in.numel(), t_len // 2)
-        if fade_n > 0:
-            # fade-in at start if overlapping previous
-            if start > 0:
-                seg[:, :fade_n] = seg[:, :fade_n] * self.fade_in[:fade_n]
-                out_wave_1_T[:, start:start + fade_n] = out_wave_1_T[:, start:start + fade_n] * self.fade_out[:fade_n] + seg[:, :fade_n]
-                out_wave_1_T[:, start + fade_n:end] = seg[:, fade_n:]
-                return
-            # fade-out at end if not last
-            if end < out_wave_1_T.size(1):
-                seg[:, -fade_n:] = seg[:, -fade_n:] * self.fade_out[:fade_n]
-        out_wave_1_T[:, start:end] = seg
+        # If overlapping previous region, apply crossfade
+        if start > 0 and fade_n > 0:
+            seg[:, :fade_n] = seg[:, :fade_n] * self.fade_in[:fade_n]
+            out_1_T[:, start:start + fade_n] = out_1_T[:, start:start + fade_n] * self.fade_out[:fade_n] + seg[:, :fade_n]
+            if start + fade_n < end:
+                out_1_T[:, start + fade_n:end] = seg[:, fade_n:]
+        else:
+            out_1_T[:, start:end] = seg
 
-    # ---------- Core ----------
+    # ---- Core ----
     def enhance_chunk(self, wav_1_t: torch.Tensor) -> torch.Tensor:
-        # wav_1_t: [1, t]
-        mel = self.mel_from_wave(wav_1_t)              # [1, 180, S]
+        mel = self.mel_from_wave(wav_1_t)                  # [1, 180, S]
         with torch.no_grad():
-            mask_B_S_F = self.model(mel)               # [1, S, 961]
-        stft_c = self.stft(wav_1_t)                    # [1, 961, S]
-        # Align dims: mask [1, S, F] -> [1, F, S]
-        mask_F_S = mask_B_S_F.transpose(1, 2).squeeze(0)           # [961, S_mask]
-        F, S = stft_c.shape[-2], stft_c.shape[-1]
+            mask_B_S_F = self.model(mel)                   # [1, S, 961]
+        stft_c = self.stft(wav_1_t)                        # [1, 961, S]
+        Fbins, Sframes = stft_c.shape[-2], stft_c.shape[-1]
+        mask_F_S = mask_B_S_F.transpose(1, 2).squeeze(0)   # [961, S_mask]
         # Time align
-        if mask_F_S.size(1) != S:
-            mask_F_S = F_interpolate_time(mask_F_S, S)             # [961, S]
-        # Freq align
-        if mask_F_S.size(0) != F:
-            mask_F_S = F_interpolate_freq(mask_F_S, F)             # [F, S]
-        # Apply sigmoid mask to magnitude with small dry mix
+        if mask_F_S.size(1) != Sframes:
+            mask_F_S = self.interp_time(mask_F_S, Sframes) # [961, S]
+        # Freq align (should already match 961)
+        if mask_F_S.size(0) != Fbins:
+            mask_F_S = self.interp_freq(mask_F_S, Fbins)   # [F, S]
+        # Apply mask
         mag = torch.abs(stft_c)
         phase = torch.angle(stft_c)
-        m = torch.sigmoid(mask_F_S).unsqueeze(0)                    # [1, F, S]
+        m = torch.sigmoid(mask_F_S).unsqueeze(0)           # [1, F, S]
         alpha = 0.1
         enh_mag = alpha * mag + (1 - alpha) * mag * m
         enh_stft = enh_mag * torch.exp(1j * phase)
         enh_wav_T = self.istft(enh_stft.squeeze(0), length=wav_1_t.size(1))  # [t]
-        return enh_wav_T.unsqueeze(0)  # [1, t]
+        return enh_wav_T.unsqueeze(0)                      # [1, t]
 
     def enhance(self, input_path: str, output_path: str) -> str:
-        wav = self.load_audio(input_path)    # [1, T]
+        wav = self.load_audio(input_path)  # [1, T]
         T = wav.size(1)
         out = torch.zeros_like(wav)
         for (s, e) in self.chunk_indices(T):
             chunk = wav[:, s:e]
-            # pad tail to window length for ISTFT stability
-            enh = self.enhance_chunk(chunk)  # [1, t]
+            enh = self.enhance_chunk(chunk)               # [1, t]
             self.crossfade_blend(out, enh, s, e)
-        # Final normalization & DC removal
+        # DC removal & normalization
         out = out - out.mean()
         m = out.abs().max()
         if m > 0:
@@ -414,29 +392,52 @@ class Enhancer48k:
         torchaudio.save(output_path, out.cpu().float(), self.sample_rate, encoding="PCM_S", bits_per_sample=16)
         return output_path
 
-# Helper interpolation for alignment
-def F_interpolate_time(mask_F_S: torch.Tensor, target_S: int) -> torch.Tensor:
-    # mask_F_S: [F, S] -> interpolate along S
-    return F.interpolate(mask_F_S.unsqueeze(0), size=(mask_F_S.size(0), target_S), mode="bilinear", align_corners=False).squeeze(0)
+# ----------------- Gradio UI -----------------
+import gradio as gr
 
-def F_interpolate_freq(mask_F_S: torch.Tensor, target_F: int) -> torch.Tensor:
-    # mask_F_S: [F, S] -> interpolate along F
-    mask_S_F = mask_F_S.transpose(0, 1).unsqueeze(0)  # [1, S, F]
-    mask_S_F = F.interpolate(mask_S_F, size=(mask_S_F.size(1), target_F), mode="bilinear", align_corners=False)
-    return mask_S_F.squeeze(0).transpose(0, 1)        # [F, S]
+enhancer_instance: Optional[Enhancer48k] = None
 
-# ================
-# Minimal CLI
-# ================
+def initialize_enhancer_ui(ckpt_path: str) -> str:
+    global enhancer_instance
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        enhancer_instance = Enhancer48k(ckpt_path, device)
+        return f"✅ Model loaded on {device}. Ready for long-form enhancement at 48 kHz."
+    except Exception as e:
+        return f"❌ Initialization error: {str(e)}"
+
+def process_with_enhancer(input_audio_path: str) -> Tuple[Optional[str], str]:
+    global enhancer_instance
+    if enhancer_instance is None:
+        return None, "❌ Model not initialized. Check checkpoint path and click 'Reload model'."
+    if not input_audio_path or not os.path.exists(input_audio_path):
+        return None, "❌ Please upload a valid audio file."
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            out_path = tmp.name
+        result = enhancer_instance.enhance(input_audio_path, out_path)
+        return result, "✅ Enhancement complete."
+    except Exception as e:
+        return None, f"❌ Processing error: {str(e)}"
+
+def launch_ui():
+    with gr.Blocks(title="MossFormer2_SE_48K - Speech Enhancement (48 kHz)") as demo:
+        gr.Markdown("### MossFormer2_SE_48K Speech Enhancement UI — Upload any audio (e.g., 16 kHz WAV/MP3/FLAC) and get an enhanced 48 kHz WAV out.")
+        with gr.Row():
+            with gr.Column(scale=1):
+                ckpt = gr.Textbox(label="Checkpoint path (.pt/.pth)", value=MODEL_PATH)
+                status = gr.Textbox(label="Model status", interactive=False)
+                reload_btn = gr.Button("Reload model", variant="primary")
+                reload_btn.click(fn=initialize_enhancer_ui, inputs=[ckpt], outputs=[status])
+                # Initialize once at launch
+                status.value = initialize_enhancer_ui(MODEL_PATH)
+            with gr.Column(scale=1):
+                input_audio = gr.Audio(label="Upload audio (any common format; 16 kHz WAV typical)", type="filepath", sources=["upload"])
+                enhance_btn = gr.Button("Enhance")
+                output_audio = gr.Audio(label="Enhanced output (48 kHz WAV)", type="filepath")
+                log = gr.Textbox(label="Logs", interactive=False)
+                enhance_btn.click(fn=process_with_enhancer, inputs=[input_audio], outputs=[output_audio, log])
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False, show_error=True, quiet=False)
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, default=MODEL_PATH, help="Path to MossFormer2_SE_48K checkpoint (.pt/.pth)")
-    parser.add_argument("--in", dest="inp", type=str, required=True, help="Input audio path (any common format)")
-    parser.add_argument("--out", dest="out", type=str, default=None, help="Output WAV path (48kHz)")
-    args = parser.parse_args()
-
-    enhancer = Enhancer48k(args.ckpt)
-    out_path = args.out or os.path.splitext(args.inp) + "_enhanced_48k.wav"
-    result = enhancer.enhance(args.inp, out_path)
-    print(f"Saved: {result}")
+    launch_ui()
