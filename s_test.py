@@ -1,4 +1,5 @@
 import os
+import sys
 import warnings
 import torch
 import torchaudio
@@ -8,6 +9,7 @@ from pathlib import Path
 import tempfile
 from typing import Tuple, Optional
 import logging
+import subprocess
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")
@@ -15,6 +17,33 @@ logging.basicConfig(level=logging.INFO)
 
 # Global variable for model directory path
 MODEL_DIR = "/path/to/your/sgmse/model"  # Change this to your local model directory
+
+def check_ninja_installation():
+    """Check if Ninja is properly installed"""
+    try:
+        result = subprocess.run(['ninja', '--version'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            logging.info(f"Ninja version: {result.stdout.strip()}")
+            return True
+        else:
+            logging.error("Ninja is installed but not working properly")
+            return False
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        logging.error("Ninja is not installed or not found in PATH")
+        return False
+
+def setup_environment():
+    """Setup environment variables for C++ compilation"""
+    # Set C++ compiler environment variables
+    os.environ['CXX'] = 'g++'
+    os.environ['CC'] = 'gcc'
+    
+    # Set CUDA environment if available
+    if torch.cuda.is_available():
+        os.environ['CUDA_HOME'] = torch.utils.cpp_extension.CUDA_HOME or '/usr/local/cuda'
+    
+    logging.info("Environment variables set for C++ compilation")
 
 class SGMSEEnhancer:
     """
@@ -45,18 +74,24 @@ class SGMSEEnhancer:
         self.corrector = 'ald'
         
         logging.info(f"Using device: {self.device}")
+        
+        # Setup environment before loading model
+        setup_environment()
+        
+        # Check Ninja installation
+        if not check_ninja_installation():
+            raise RuntimeError("Ninja is not properly installed. Please run: pip install ninja")
+        
         self.load_model()
     
     def load_model(self):
         """Load the SGMSE model from local directory"""
         try:
             # Add the model directory to Python path
-            import sys
-            sys.path.append(str(self.model_dir))
+            sys.path.insert(0, str(self.model_dir))
             
             # Import SGMSE modules
             from sgmse.model import ScoreModel
-            from sgmse import sampling
             
             # Find checkpoint file
             checkpoint_files = list(self.model_dir.glob("*.ckpt"))
@@ -66,14 +101,23 @@ class SGMSEEnhancer:
             checkpoint_path = checkpoint_files[0]  # Use first checkpoint found
             logging.info(f"Loading checkpoint from: {checkpoint_path}")
             
-            # Load the model
-            self.model = ScoreModel.load_from_checkpoint(
-                checkpoint_path, 
-                map_location=self.device
-            )
-            self.model.eval()
-            self.model.to(self.device)
+            # Load the model with error handling
+            try:
+                self.model = ScoreModel.load_from_checkpoint(
+                    checkpoint_path, 
+                    map_location=self.device,
+                    strict=False  # Allow missing keys for compatibility
+                )
+            except Exception as e:
+                logging.error(f"Error loading checkpoint: {e}")
+                # Try alternative loading method
+                self.model = ScoreModel.load_from_checkpoint(
+                    checkpoint_path, 
+                    map_location='cpu'  # Load to CPU first
+                )
+                self.model.to(self.device)
             
+            self.model.eval()
             logging.info("SGMSE model loaded successfully")
             
         except Exception as e:
@@ -237,9 +281,17 @@ class SGMSEEnhancer:
 enhancer = None
 
 def initialize_model():
-    """Initialize the SGMSE model"""
+    """Initialize the SGMSE model with proper error handling"""
     global enhancer
     try:
+        # Check if model directory exists
+        if not os.path.exists(MODEL_DIR):
+            return f"Error: Model directory not found: {MODEL_DIR}"
+        
+        # Check Ninja installation first
+        if not check_ninja_installation():
+            return "Error: Ninja is not installed. Please run: pip install ninja"
+        
         enhancer = SGMSEEnhancer(MODEL_DIR)
         return "Model initialized successfully!"
     except Exception as e:
@@ -258,7 +310,7 @@ def enhance_speech(audio_file) -> Tuple[int, np.ndarray]:
     global enhancer
     
     if enhancer is None:
-        raise gr.Error("Model not initialized. Please check MODEL_DIR path.")
+        raise gr.Error("Model not initialized. Please check MODEL_DIR path and click 'Initialize Model'.")
     
     if audio_file is None:
         raise gr.Error("Please upload an audio file.")
@@ -305,6 +357,8 @@ def create_gradio_interface():
             - Optimized for ASR systems
             - Removes noise and reverberation
             - Preserves speech quality
+            
+            **Note:** Make sure Ninja is installed: `pip install ninja`
             """
         )
         
@@ -330,7 +384,7 @@ def create_gradio_interface():
                     type="numpy"
                 )
         
-        # Model status
+        # Model status and initialization
         with gr.Row():
             status_text = gr.Textbox(
                 label="Model Status",
@@ -338,6 +392,18 @@ def create_gradio_interface():
                 interactive=False
             )
             init_btn = gr.Button("Initialize Model")
+        
+        # System info
+        with gr.Row():
+            gr.Markdown(
+                f"""
+                ### System Information
+                - **PyTorch Version**: {torch.__version__}
+                - **CUDA Available**: {torch.cuda.is_available()}
+                - **Device**: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}
+                - **Ninja Installed**: {check_ninja_installation()}
+                """
+            )
         
         # Event handlers
         init_btn.click(
@@ -351,17 +417,23 @@ def create_gradio_interface():
             outputs=audio_output
         )
         
-        # Examples section
+        # Usage instructions
         gr.Markdown(
             """
-            ### Usage Instructions
+            ### Troubleshooting
             
-            1. **Initialize Model**: Click "Initialize Model" first to load the SGMSE model
-            2. **Upload Audio**: Upload a noisy speech file or record using microphone
-            3. **Enhance**: Click "Enhance Speech" to process the audio
-            4. **Download**: Use the download button to save the enhanced audio
+            If you encounter the "Ninja is required" error:
             
-            **Supported Formats**: WAV, MP3, FLAC, M4A
+            1. **Install Ninja**: `pip install ninja`
+            2. **Install Build Tools** (Linux): `sudo apt-get install build-essential`
+            3. **Set Environment Variables**:
+               ```
+               export CXX=g++
+               export CC=gcc
+               ```
+            4. **Restart** the application after installation
+            
+            **Supported Formats**: WAV, MP3, FLAC, M4A  
             **Output**: 16kHz WAV optimized for ASR systems
             """
         )
@@ -377,9 +449,19 @@ def main():
         print("Please update the MODEL_DIR variable with the correct path to your SGMSE model.")
         return
     
+    # Check Ninja installation
+    if not check_ninja_installation():
+        print("ERROR: Ninja is not installed!")
+        print("Please install Ninja using: pip install ninja")
+        return
+    
     print("Starting SGMSE Speech Enhancement Interface...")
     print(f"Model directory: {MODEL_DIR}")
     print(f"Using device: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
+    print(f"Ninja version: {subprocess.run(['ninja', '--version'], capture_output=True, text=True).stdout.strip()}")
+    
+    # Setup environment
+    setup_environment()
     
     # Create and launch interface
     interface = create_gradio_interface()
